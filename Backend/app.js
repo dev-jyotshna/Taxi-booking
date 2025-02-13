@@ -1,7 +1,11 @@
 import express from "express"
-const app = express()
+import cors from "cors"
 
-app.get('/', (res, req) => {
+const app = express()
+app.use(cors());
+
+
+app.get('/', (req, res) => {
     res.send('Hello World')
 })
 export {app}

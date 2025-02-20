@@ -324,3 +324,73 @@ export {app}
     });
 ```
 - create docs for every route in Backend README.md file
+- create the route for user login in user.route.js add the code below
+```js
+import { Router } from 'express'
+import { body } from "express-validator"
+import {
+    registerUser,
+    loginUser
+} from "../controllers/user.controller.js"
+
+const router = Router()
+
+router.route('/register').post( 
+    [
+        body('email').isEmail().withMessage('Invalid Email'), 
+        body('fullname.firstname').isLength({ min: 3 }).withMessage('First name must be at least 3 characters long'),
+        body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long'),
+    ],
+    registerUser
+)
+
+router.route('/login').post([
+    body('email').isEmail().withMessage('Invalid Email'),
+    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
+],
+    loginUser
+)
+
+export default router
+```
+- add controller function loginUser in user.controller.js for login
+```js
+const loginUser = async (req, res) => {
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json( { errors: errors.array() });
+    }
+
+    const {email, password} = req.body
+
+    const user = await User.findOne({ email }).select('+password') // get thhe password too since by default password select is false in user.model.js
+
+    if (!user) {
+        return res.status(401).json({ message: 'Invalid email or password'})
+    }
+
+    const isMatch = await user.comparePassword(password) ;
+
+    if (!isMatch) {
+        return res.status(401).json({ message: 'Invalid email or password' })
+    }
+
+    const token = user.generateAuthToken();
+    res.status(200).json({ token, user });
+}
+
+export {
+    registerUser,
+    loginUser
+}
+```
+- check in postman for http://localhost:4000/userse/login and body>raw>below code , then test incorrect password for test1 then incorrect email for test2
+```json
+{
+    "email": "test@test.com",
+    "password": "test_password"
+}
+```
+- create login route api documentation
+

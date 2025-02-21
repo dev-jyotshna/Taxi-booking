@@ -159,7 +159,8 @@ userSchema.statics.hashPassword = async function (password) {
 
 export const User = mongoose.model("User", userSchema)
 ```
-
+## Controllers & routes
+### register user
 - create folder "controllers" and a file "user.controller.js"
 - add below code in it
 ```js
@@ -197,7 +198,7 @@ export default router
 ```
 - create a folder "services" and file "user.service.js"
 ```js
-import { User } from "../models/user.model";
+import { User } from "../models/user.model.js";
 
 export const createUser = async ({
     firstname, lastname, email, password
@@ -324,6 +325,8 @@ export {app}
     });
 ```
 - create docs for every route in Backend README.md file
+
+### login user
 - create the route for user login in user.route.js add the code below
 ```js
 import { Router } from 'express'
@@ -394,3 +397,302 @@ export {
 ```
 - create login route api documentation
 
+### get user profile
+- add below code in user.route.js
+```js
+router.route('/profile').get(getUserProfile)
+
+export default router
+```
+- add controller for it 
+- for validating the if user is logged in we use middleware
+- create folder "middleware" & file "auth.middleware.js"
+- use token to get if the user is logged in or not
+- we get token from either header or from cookies
+- add below code in auth.middleware.js
+```js
+import { User } from "../models/user.model.js"
+import bcrypt from 'bcrypt'
+import jwt from 'jsonwebtoken'
+
+export const authUser = async (req, res, next) => {
+    const token = req.cookies.token || req.headers.authorization?.split(' ')[ 1 ];
+    if (!token) {
+        return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded._id)
+
+        req.user = user;
+
+        return next();
+    } catch (err) {
+        return res.status(401).json({ message: 'Unauthorized'})
+    }
+}
+```
+- now update this middleware authorization in user.route.js
+```js
+import { Router } from 'express'
+import { body } from "express-validator"
+import {
+    registerUser,
+    loginUser,
+    getUserProfile
+} from "../controllers/user.controller.js"
+import { authUser } from '../middleware/auth.middleware.js'
+
+const router = Router()
+
+router.route('/register').post( 
+    [
+        body('email').isEmail().withMessage('Invalid Email'), 
+        body('fullname.firstname').isLength({ min: 3 }).withMessage('First name must be at least 3 characters long'),
+        body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long'),
+    ],
+    registerUser
+)
+
+router.route('/login').post([
+    body('email').isEmail().withMessage('Invalid Email'),
+    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
+],
+    loginUser
+)
+
+router.route('/profile').get(authUser, getUserProfile)
+
+export default router
+```
+- add the code in user.controller.js
+```js
+const getUserProfile = async (req, res) => {
+    // get profile to a particular user if the user is logged in, middleware to validate
+    res.status(200).json(req.user)
+}
+
+export {
+    registerUser,
+    loginUser,
+    getUserProfile
+}
+```
+- use cookie-parser 
+- npm i cookie-parser
+- import it in the app.js
+```js
+import express from "express"
+import cors from "cors"
+import cookieParser from "cookie-parser";
+
+const app = express()
+app.use(cors());
+
+app.use(express.json())
+app.use(express.urlencoded( {extended: true}))
+app.use(cookieParser())
+
+app.get('/', (req, res) => {
+    res.send('Hello World')
+})
+
+//import routes
+import userRouter from './routes/user.route.js'
+
+app.use("/users", userRouter)
+
+export {app}
+```
+- npx nodemon
+- check the profile from header and cookie in the postman
+- using headers
+- ![alt text](<Screenshot 2025-02-21 002702.png>)
+- using cookies
+- add res.cookie with its code in loginUser in user.controller.js
+```js
+    const token = user.generateAuthToken();
+
+    res.cookie('token', token);
+    res.status(200)   
+    .json({ token, user });
+}
+
+const getUserProfile = async (req, res) => {
+    // get profile to a particular user if the user is logged in, middleware to validate
+    res.status(200).json(req.user)
+}
+
+export {
+    registerUser,
+    loginUser,
+    getUserProfile
+}
+```
+- check in postman again
+- it works properly
+
+### logout route
+- with jwt and help of database
+- make a collection of blacklisted tokens(those tokens that have been logged out)
+- then check if the token exists in it or not
+- if storing evry token in the database will not be good for the memory so we use TTL time to live(it automaticallt deletes the document after the TTL is done)
+- create file models> blacklistToken.model.js
+```js
+import mongoose from 'mongoose'
+
+const blacklistTokenSchema = new mongoose.Schema({
+    toke: {
+        type: String,
+        required: true,
+        unique: true
+    },
+    createdAt: {
+        type: Date,
+        default: Date.now,
+        expires: 86400 //24 hr in secs
+    }
+});
+export const BlacklistToken = mongoose.model('BlacklistToken', blacklistTokenSchema)
+```
+- update token expiration time in user.model.js
+```js
+userSchema.methods.generateAuthToken = function() {
+    const token = jwt.sign({_id: this._id}, process.env.JWT_SECRET, { expiresIn: '24h'})
+    return token;
+}
+```
+- create logout route in user.route.js
+```js
+import { Router } from 'express'
+import { body } from "express-validator"
+import {
+    registerUser,
+    loginUser,
+    getUserProfile,
+    logoutUser
+} from "../controllers/user.controller.js"
+import { authUser } from '../middleware/auth.middleware.js'
+
+const router = Router()
+
+router.route('/register').post( 
+    [
+        body('email').isEmail().withMessage('Invalid Email'), 
+        body('fullname.firstname').isLength({ min: 3 }).withMessage('First name must be at least 3 characters long'),
+        body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long'),
+    ],
+    registerUser
+)
+
+router.route('/login').post([
+    body('email').isEmail().withMessage('Invalid Email'),
+    body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
+],
+    loginUser
+)
+
+router.route('/profile').get(authUser, getUserProfile)
+router.route('/logout').get(authUser, logoutUser)
+
+export default router
+```
+- create logoutUser controller in user.controller.js and import blacklistTOken model
+```js
+import { User } from '../models/user.model.js'
+import { createUser } from '../services/user.service.js'
+import { validationResult } from 'express-validator'
+import { BlacklistToken } from '../models/blacklistToken.model.js'
+
+const registerUser = async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json( { errors: errors.array() });
+    }
+
+    const {fullname, email, password} = req.body
+
+    const hashedPassword = await User.hashPassword(password);
+
+    const user = await createUser({
+        firstname: fullname.firstname,
+        lastname: fullname.lastname,
+        email,
+        password: hashedPassword
+    });
+
+    const token = user.generateAuthToken();
+
+    res.status(200).json( {token, user})
+}
+
+const loginUser = async (req, res) => {
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json( { errors: errors.array() });
+    }
+
+    const {email, password} = req.body
+
+    const user = await User.findOne({ email }).select('+password') // get thhe password too since by default password select is false in user.model.js
+
+    if (!user) {
+        return res.status(401).json({ message: 'Invalid email or password'})
+    }
+
+    const isMatch = await user.comparePassword(password) ;
+
+    if (!isMatch) {
+        return res.status(401).json({ message: 'Invalid email or password' })
+    }
+
+    const token = user.generateAuthToken();
+
+    res.cookie('token', token);
+    res.status(200)   
+    .json({ token, user });
+}
+
+const getUserProfile = async (req, res) => {
+    // get profile to a particular user if the user is logged in, middleware to validate
+    res.status(200).json(req.user)
+}
+
+const logoutUser = async (req, res) => {
+    res.clearCookie('token')
+    const token = req.cookies.token || req.headers.authorization.split(' ')[ 1 ];
+    await BlacklistToken.create({token})
+    res.status(200).json({message: 'Logged out'});
+}
+
+export {
+    registerUser,
+    loginUser,
+    getUserProfile,
+    logoutUser
+}
+```
+- token can still be stored in local sorage of the user, so to prevent it from happening we update the middleware auth.middleware.js
+- add below code in authUser function 
+```js
+    const isBlacklisted = await User.findOne({ token: token })
+    if(isBlacklisted) {
+        return res.status(401).json({ message: 'Unauthorized' })
+    }
+```
+- Bug FIX : encountered a bug in database field as instaed of writing token i wrot toke and started a fundamental error
+    - soln : i needed to delete the database and run all the rooutes and check them all in postman again
+- checking the routes in postman as follows : 
+    1. register
+    2. login
+    3. profile: got profile info
+    4. logout
+    5. profile: got unauthorized 
+- working properly
+
+- docs for profile and logout route endpoint
+- Now basic authentication for user is done
+
+## Start of captain

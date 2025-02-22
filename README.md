@@ -232,6 +232,12 @@ const registerUser = async (req, res, next) => {
 
     const {firstname, lastname, email, password} = req.body
 
+    const isUserAlreadyExist = await User.findOne({ email });
+    
+        if (!isUserAlreadyExist) {
+            return res.status(400).json({ message: 'User already exist'})
+        }
+
     const hashedPassword = await User.hashPassword(password);
 
     const user = await createUser({
@@ -258,6 +264,12 @@ const registerUser = async (req, res, next) => {
     if (!errors.isEmpty()) {
         return res.status(400).json( { errors: errors.array() });
     }
+
+    const isUserAlreadyExist = await User.findOne({ email });
+    
+        if (!isUserAlreadyExist) {
+            return res.status(400).json({ message: 'User already exist'})
+        }
 
     const {firstname, lastname, email, password} = req.body
 
@@ -537,13 +549,13 @@ export {
 - with jwt and help of database
 - make a collection of blacklisted tokens(those tokens that have been logged out)
 - then check if the token exists in it or not
-- if storing evry token in the database will not be good for the memory so we use TTL time to live(it automaticallt deletes the document after the TTL is done)
+- storing every token in the database will not be good for the memory so we use TTL time to live(it automaticallt deletes the document after the TTL is done)
 - create file models> blacklistToken.model.js
 ```js
 import mongoose from 'mongoose'
 
 const blacklistTokenSchema = new mongoose.Schema({
-    toke: {
+    token: {
         type: String,
         required: true,
         unique: true
@@ -610,6 +622,13 @@ const registerUser = async (req, res, next) => {
     if (!errors.isEmpty()) {
         return res.status(400).json( { errors: errors.array() });
     }
+
+    const isUserAlreadyExist = await User.findOne({ email });
+    
+        if (!isUserAlreadyExist) {
+            return res.status(400).json({ message: 'User already exist'})
+        }
+
 
     const {fullname, email, password} = req.body
 
@@ -682,8 +701,8 @@ export {
         return res.status(401).json({ message: 'Unauthorized' })
     }
 ```
-- Bug FIX : encountered a bug in database field as instaed of writing token i wrot toke and started a fundamental error
-    - soln : i needed to delete the database and run all the rooutes and check them all in postman again
+- Bug FIX : encountered a bug in database field as instaed of writing token i wrote toke and started a fundamental error
+    - soln : i needed to delete the database and run all the routes and check them all in postman again
 - checking the routes in postman as follows : 
     1. register
     2. login
@@ -695,4 +714,216 @@ export {
 - docs for profile and logout route endpoint
 - Now basic authentication for user is done
 
-## Start of captain
+## Start of captain authentication
+- create captain.model.js in models folder
+- add the below code in captain.model.js
+```js
+import mongoose from 'mongoose'
+import bcrypt from 'bcrypt'
+import jwt from 'jsonwebtoken'
+
+const captainSchema = new mongoose.Schema({
+    fullname: {
+        firstname: {
+            type: String,
+            required: true,
+            minlength: [3, 'Firstname must be at least 3 characters long']
+        },
+        lastname: {
+            type: String,
+            minlength: [3, 'Lastname must be at least 3 characters long']
+        }
+    },
+    email: {
+        type: String,
+        required: true,
+        unique: true,
+        lowercase: true,
+        match: [/^\S+@\S+\.\S+$/, 'Please enter a valid email']
+    },
+    password: {
+        type: String,
+        required: true,
+        select: false,
+    },
+    socketId: {
+        type: String
+    },
+    status: {
+        type: String,
+        enum: ['active', 'inactive'],
+        default: 'inactive'
+    },
+    vehicle: {
+        color: {
+            type: String,
+            required: true,
+            minlength: [3, 'Color must be at least 3 characters long']
+        },
+        plate: {
+            type: String,
+            required: true,
+            minlength: [3, 'Plate must be at least 3 characters long']
+        },
+        capacity: {
+            type: Number,
+            requires: true,
+            min: [ 1, 'Capacity must be at least 1']
+        },
+        vehicleType: {
+            type: String,
+            required: true,
+            enum: ['car', 'motorcycle', 'auto']
+        }
+    },
+    location: {
+        latitude: {
+            type: Number
+        },
+        longitude: {
+            type: Number
+        }
+    }
+}) 
+
+captainSchema.methods.generateAuthToken = function(){
+    const token = jwt.sign({_id: this._id }, process.env.JWT_SECRET, { expiresIn: '24h'});
+    return token;
+}
+
+captainSchema.methods.comparePassword = async function(password) {
+    return await bcrypt.compare(password, this.password)
+}
+
+captainSchema.statics.hashPassword = async function(password) {
+    return await bcrypt.hash(password, 10);
+}
+
+export const Captain = mongoose.model("Captain", captainSchema)
+```
+- create controller for captain captain.controller.js
+```js
+import { Captain } from "../models/captain.model.js";
+
+```
+- create routes for captain controller in captain.route.js
+```js
+import { Router } from "express";
+
+const router = Router()
+
+export default router
+```
+- use the captain.route.js routes in app.js to make it actually work
+- update and add the below code in app.js
+```js
+//import routes
+import userRouter from './routes/user.route.js'
+import captainRouter from './routes/captain.route.js'
+
+app.use("/users", userRouter)
+app.use("/captains", captainRouter)
+
+export {app}
+```
+- add the below code in captain.route.js 
+```js
+import { Router } from "express";
+import { body } from "express-validator";
+import { registerCaptain } from "../controllers/captain.controller.js";
+
+const router = Router()
+
+router.route('/register').post(
+    [
+        body('email').isEmail().withMessage('Invalid Email'), 
+        body('fullname.firstname').isLength({ min: 3 }).withMessage('First name must be at least 3 characters long'),
+        body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long'),
+        body('vehicle.color').isLength({ min: 3 }).withMessage('Color must be at least 3 characters long'),
+        body('vehicle.plate').isLength({ min: 3 }).withMessage('Plate must be at least 3 characters long'),
+        body('vehicle.capacity').isInt({ min: 1 }).withMessage('Capacity must be at least 1 '),
+        body('vehicle.vehicleType').isIn(['car', 'motorcycle', 'auto']).withMessage('Invalid vehicle type'),
+    ],
+    registerCaptain
+)
+
+export default router
+```
+- create a captain.service.js file and add the below code in it
+```js
+import { Captain } from "../models/captain.model.js";
+
+export const createCaptain = async ({ 
+    firstname, lastname, email, password, color, plate, capacity, vehicleType
+}) => {
+    if (!firstname || !email || !password || !color || !plate || !capacity) {
+        throw new Error('All fields are required');
+    }
+
+    const captain = Captain.create({
+        fullname: {
+            firstname,
+            lastname
+        },
+        email,
+        password,
+        vehicle: {
+            color,
+            plate,
+            capacity,
+            vehicleType
+        }
+    })
+
+    return captain
+}
+```
+- import it in the captain.controller.js and the add below
+```js
+import { Captain } from "../models/captain.model.js";
+import { createCaptain } from "../services/captain.service.js";
+import { validationResult } from "express-validator";
+
+
+const registerCaptain = async (req, res) => {
+
+    const errors = validationResult(req)
+    if(!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+    const {fullname, email, password, vehicle} = req.body
+
+    const isCaptainAlreadyExist = await Captain.findOne({ email });
+
+    if (!isCaptainAlreadyExist) {
+        return res.status(400).json({ message: 'Captain already exist'})
+    }
+
+    const hashedPassword = await Captain.hashPassword(password) 
+
+    const captain = await createCaptain({
+        firstname: fullname.firstname,
+        lastname: fullname.lastname,
+        email,
+        password: hashedPassword,
+        color: vehicle.color,
+        plate: vehicle.plate,
+        capacity: vehicle.capacity,
+        vehicleType: vehicle.vehicleType
+    });
+
+    const token = captain.generateAuthToken();
+
+    res.status(201).json({ token, captain})
+}
+
+export {
+    registerCaptain
+}
+```
+- check the register route in postman for captain
+- create docs for register captain route
+- captain registration done
+
+### login route

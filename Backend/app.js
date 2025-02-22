@@ -15,7 +15,9 @@ app.get('/', (req, res) => {
 
 //import routes
 import userRouter from './routes/user.route.js'
+import captainRouter from './routes/captain.route.js'
 
 app.use("/users", userRouter)
+app.use("/captains", captainRouter)
 
 export {app}

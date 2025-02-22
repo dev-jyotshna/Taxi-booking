@@ -13,7 +13,7 @@ const registerUser = async (req, res, next) => {
 
     const isUserAlreadyExist = await User.findOne({ email });
     
-    if (!isUserAlreadyExist) {
+    if (isUserAlreadyExist) {
         return res.status(400).json({ message: 'User already exist'})
     }
 

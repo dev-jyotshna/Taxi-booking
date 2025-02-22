@@ -234,7 +234,7 @@ const registerUser = async (req, res, next) => {
 
     const isUserAlreadyExist = await User.findOne({ email });
     
-        if (!isUserAlreadyExist) {
+        if (isUserAlreadyExist) {
             return res.status(400).json({ message: 'User already exist'})
         }
 
@@ -267,7 +267,7 @@ const registerUser = async (req, res, next) => {
 
     const isUserAlreadyExist = await User.findOne({ email });
     
-        if (!isUserAlreadyExist) {
+        if (isUserAlreadyExist) {
             return res.status(400).json({ message: 'User already exist'})
         }
 
@@ -625,7 +625,7 @@ const registerUser = async (req, res, next) => {
 
     const isUserAlreadyExist = await User.findOne({ email });
     
-        if (!isUserAlreadyExist) {
+        if (isUserAlreadyExist) {
             return res.status(400).json({ message: 'User already exist'})
         }
 
@@ -896,7 +896,7 @@ const registerCaptain = async (req, res) => {
 
     const isCaptainAlreadyExist = await Captain.findOne({ email });
 
-    if (!isCaptainAlreadyExist) {
+    if (isCaptainAlreadyExist) {
         return res.status(400).json({ message: 'Captain already exist'})
     }
 
@@ -927,3 +927,186 @@ export {
 - captain registration done
 
 ### login route
+
+ - import loginCaptain in captain.route.js and add the below code in it
+ ```js
+ router.route('/login').post(
+    [
+        body('email').isEmail().withMessage('Invalid Email'),
+        body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
+    ],
+    loginCaptain
+)
+
+export default router
+```
+- add the below code in captain.controller.js
+```js
+const loginCaptain = async (req, res) => {
+    const errors = validationResult(req);
+
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+    const {email, password} = req.body
+
+    const captain = await Captain.findOne({ email }).select('+password')
+
+    if (!captain) {
+        return res.status(401).json({ message: 'Invalid email or password'})
+    }
+
+    const isMatch = await captain.comparePassword(password);
+
+    if (!isMatch) {
+        return res.status(401).json({ message: 'Invalid email or password'})
+    }
+
+    const token = captain.generateAuthToken();
+
+    res.cookie('token', token)
+    res.status(200).json({ token, captain })
+}
+
+export {
+    registerCaptain,
+    loginCaptain
+}
+```
+### show captain profile 
+- add the below code in auth.middleware.js to authenticate captain before showing the captain profile
+```js
+import { User } from "../models/user.model.js"
+import bcrypt from 'bcrypt'
+import jwt from 'jsonwebtoken'
+import {BlacklistToken} from '../models/blacklistToken.model.js'
+import { Captain } from "../models/captain.model.js"
+
+export const authUser = async (req, res, next) => {
+    const token = req.cookies.token || req.headers.authorization?.split(' ')[ 1 ];
+    if (!token) {
+        return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    const isBlacklisted = await BlacklistToken.findOne({ token: token })
+    if(isBlacklisted) {
+        return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const user = await User.findById(decoded._id)
+
+        req.user = user;
+
+        return next();
+    } catch (err) {
+        return res.status(401).json({ message: 'Unauthorized'})
+    }
+}
+
+export const authCaptain = async (req, res, next) => {
+    const token = req.cookies.token || req.headers.authorization?.split(' ')[ 1 ];
+    if (!token) {
+        return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    const isBlacklisted = await BlacklistToken.findOne({ token: token })
+    if(isBlacklisted) {
+        return res.status(401).json({ message: 'Unauthorized' })
+    }
+
+    try {
+        const decoded = jwt.verify(token, process.env.JWT_SECRET);
+        const captain = await Captain.findById(decoded._id)
+        req.captain = captain;
+
+        return next()
+    } catch (err) {
+        res.status(401).json({ message: 'Unauthorized'})
+    }
+}
+```
+- add the below code in captain.route.js
+```js
+import { Router } from "express";
+import { body } from "express-validator";
+import { 
+    registerCaptain,
+    loginCaptain,
+    getCaptainProfile
+ } from "../controllers/captain.controller.js";
+import { authCaptain } from "../middleware/auth.middleware.js";
+
+const router = Router()
+
+router.route('/register').post(
+    [
+        body('email').isEmail().withMessage('Invalid Email'), 
+        body('fullname.firstname').isLength({ min: 3 }).withMessage('First name must be at least 3 characters long'),
+        body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long'),
+        body('vehicle.color').isLength({ min: 3 }).withMessage('Color must be at least 3 characters long'),
+        body('vehicle.plate').isLength({ min: 3 }).withMessage('Plate must be at least 3 characters long'),
+        body('vehicle.capacity').isInt({ min: 1 }).withMessage('Capacity must be at least 1 '),
+        body('vehicle.vehicleType').isIn(['car', 'motorcycle', 'auto']).withMessage('Invalid vehicle type'),
+    ],
+    registerCaptain
+)
+
+router.route('/login').post(
+    [
+        body('email').isEmail().withMessage('Invalid Email'),
+        body('password').isLength({ min: 8 }).withMessage('Password must be at least 8 characters long')
+    ],
+    loginCaptain
+)
+
+router.route('/profile').get(authCaptain, getCaptainProfile)
+
+export default router
+```
+- add the below code in captain.controller.js for getCaptainProfile
+```js
+const getCaptainProfile = async (req, res) => {
+    res.status(200).json({ captain: req.captain })
+}
+
+export {
+    registerCaptain,
+    loginCaptain,
+    getCaptainProfile
+}
+```
+### logout route
+- import logoutCaptain and add the below code in captain.route.js
+```js
+router.get('/logout', authCaptain, logoutCaptain)
+
+export default router
+```
+- add the below code in captain.controller.js
+```js
+const logoutCaptain = async (req, res) => {
+    const token = req.cookies.token || req.headers.authorization?.split(' ')[ 1 ];
+
+    await BlacklistToken.create({ token });
+
+    res.clearCookie('token');
+    res.status(200).json({ message: 'Logout successfully'})
+}
+
+export {
+    registerCaptain,
+    loginCaptain,
+    getCaptainProfile,
+    logoutCaptain
+}
+```
+- check in postman login, profile, logout routes
+- check login, profile: shows captain profile, logout, profile: usauthorized
+- routes are working properly
+- docs for every route
+- captain authentication done
+
+## Starting Frontend

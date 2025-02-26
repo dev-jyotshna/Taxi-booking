@@ -1104,9 +1104,550 @@ export {
 }
 ```
 - check in postman login, profile, logout routes
-- check login, profile: shows captain profile, logout, profile: usauthorized
+- check login, profile: shows captain profile, logout, profile: unauthorized
 - routes are working properly
 - docs for every route
 - captain authentication done
 
 ## Starting Frontend
+- in Taxi Booking(Uber clone) folder 
+- npm create vite@latest
+- now use react and vanilla javascript , a folder named Frontend is created now 
+- cd Frontend
+- npm i
+- npm run dev
+- in App.jsx delete the default code and write rafce then click enter 
+- remove code from index.css
+- for using tailwindcss
+- npm install -D tailwindcss postcss autoprefixer
+- npm install tailwindcss @tailwindcss/vite
+
+- add the below code in vite.config.js
+```js
+import { defineConfig } from 'vite'
+import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+
+
+// https://vite.dev/config/
+export default defineConfig({
+  plugins: [
+    tailwindcss(),
+    react(),
+  ],
+})
+
+```
+- add below code in index.css
+```css
+@import "tailwindcss";
+```
+- npm run dev
+- There were major changes in the installation of tailwind for the vite react app 
+- from the last time I use of tailwind in the react app 
+
+- when opening the app we get this 
+- create folder "pages" inn Frontend>src
+- create Home.jsx, UserLogin.jsx, UserSignUp.jsx, CaptainLogin.jsx, CaptainSignUp.jsx
+- do rfce for the above pages in these files
+- routing : to get from one page to another page usig react router don in App.jsx
+- npm i react-router-dom
+- add the below code in main.jsx
+```js
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+import {BrowserRouter} from 'react-router-dom'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <BrowserRouter>
+    <App />
+    </BrowserRouter>
+  </StrictMode>,
+)
+```
+- add below code to add routes in App.jsx
+```js
+import React from 'react'
+import { Route, Routes } from 'react-router-dom'
+import Home from './pages/Home'
+import UserLogin from './pages/UserLogin'
+import UserSignUp from './pages/UserSignUp'
+import CaptainLogin from './pages/CaptainLogin'
+import CaptainSignUp from './pages/CaptainSignUp'
+
+const App = () => {
+  return (
+    <div >
+      <Routes>
+        <Route path='/' element={<Home />}/>
+        <Route path='/login' element={<UserLogin />}/>
+        <Route path='/signup' element={<UserSignUp />}/>
+        <Route path='/captain-login' element={<CaptainLogin />}/>
+        <Route path='/captain-signup' element={<CaptainSignUp />}/>
+      </Routes>
+    </div>
+  )
+}
+
+export default App
+```
+- add the below code in Home.jsx
+```jsx
+import React from 'react'
+import { Link } from 'react-router-dom'
+
+function Home() {
+  return (
+    <div>
+        <div className='bg-cover bg-[url(https://images.unsplash.com/photo-1538563188159-070c4db2bc65?q=80&w=987&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D)] h-screen  pt-15 flex justify-between flex-col w-full '>
+            <img className='w-14 ml-9' src="../../1659761100uber-logo-png.png" />
+            <div className='bg-white pb-7 py-4 px-4'>
+                <h2 className='text-3xl font-bold '>Get started with Uber</h2>
+                <Link to='/login' className='flex items-center justify-center w-full  bg-black text-white py-3 rounded mt-4'>Continue</Link>
+            </div>
+        </div>
+    </div>
+  )
+}
+
+export default Home
+```
+- adding the picture in home.jsx by searching it in the google lens can be used or in anyother image can also be used
+- add the below code in pages>UserLogin.jsx 
+```jsx
+import React from 'react'
+import { Link } from 'react-router-dom'
+
+function UserLogin() {
+  return (
+    <div className='p-7 h-screen flex flex-col justify-between'>
+      <div>
+        <img className='w-16 mb-10' src="../../1659761100uber-logo-png.png" />
+        <form >
+          <h3 className='text-lg font-medium mb-2'>What's your email?</h3>
+          <input 
+            required 
+            className='bg-[#eeeeee] rounded mb-7 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="email" 
+            placeholder='email@example.com'
+          />
+          
+          <h3 className='text-lg font-medium mb-2'>Enter Password</h3>
+          <input 
+            required 
+            className='bg-[#eeeeee] rounded mb-7 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="password" 
+            placeholder='password'
+          />
+          <button
+            className='bg-[#111] rounded mb-3 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+          >Login</button>
+
+          <p className='text-center'>New here? <Link to='/signup' className='text-blue-600'> Create new Account</Link></p>
+        </form>
+      </div>
+
+      <div>
+        <button
+          className='bg-[#10b461] rounded mb-7 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+        >Sign in as Captain</button>
+      </div>
+    </div>
+  )
+}
+
+export default UserLogin
+```
+- add below code for now performing two-way binding in pages>UserLogin.jsx to get data to save as an object
+```jsx
+import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
+
+function UserLogin() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [userData, setUserData] = useState({})
+
+
+  const submitHandler = (e) => {
+    e.preventDefault();
+    setUserData({
+      email: email,
+      password: password
+    })
+    setEmail('')
+    setPassword('')
+  }
+
+  return (
+    <div className='p-7 h-screen flex flex-col justify-between'>
+      <div>
+        <img className='w-16 mb-10' src="../../1659761100uber-logo-png.png" />
+        <form onSubmit={(e) => {
+          submitHandler(e)
+        }}>
+          <h3 className='text-lg font-medium mb-2'>What's your email?</h3>
+          <input 
+            required 
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-7 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="email" 
+            placeholder='email@example.com'
+          />
+          
+          <h3 className='text-lg font-medium mb-2'>Enter Password</h3>
+          <input 
+            required 
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-7 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="password" 
+            placeholder='password'
+          />
+          <button
+            className='bg-[#111] rounded mb-3 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+          >Login</button>
+
+          <p className='text-center'>New here? <Link to='/signup' className='text-blue-600'> Create new Account</Link></p>
+        </form>
+      </div>
+
+      <div>
+        <Link to='/captain-login'
+          className='bg-[#10b461] flex items-center justify-center rounded mb-5 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+        >Sign in as Captain</Link>
+      </div>
+    </div>
+  )
+}
+
+export default UserLogin
+```
+- add below code in pages/CaptainLogin.jsx
+```jsx
+import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
+
+function CaptainLogin() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [captainData, setCaptainData] = useState({})
+
+
+  const submitHandler = (e) => {
+    e.preventDefault();
+    setCaptainData({
+      email: email,
+      password: password
+    })
+    setEmail('')
+    setPassword('')
+  }
+
+  return (
+    <div className='p-7 h-screen flex flex-col justify-between'>
+      <div>
+        <img className='w-20 mb-2' src="..\uber-driver.svg" />
+        <form onSubmit={(e) => {
+          submitHandler(e)
+        }}>
+          <h3 className='text-lg font-medium mb-2'>What's your email?</h3>
+          <input 
+            required 
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-7 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="email" 
+            placeholder='email@example.com'
+          />
+          
+          <h3 className='text-lg font-medium mb-2'>Enter Password</h3>
+          <input 
+            required 
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-7 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="password" 
+            placeholder='password'
+          />
+          <button
+            className='bg-[#111] rounded mb-3 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+          >Login</button>
+
+          <p className='text-center'>Join a fleet? <Link to='/captain-signup' className='text-blue-600'> Register as a captain</Link></p>
+        </form>
+      </div>
+
+      <div>
+        <Link to='/login'
+          className='bg-[#cd4204] flex items-center justify-center rounded mb-5 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+        >Sign in as User</Link>
+      </div>
+    </div>
+  )
+}
+
+export default CaptainLogin
+```
+- add the below code in pages/UserSignUp.jsx with two-way binding of data
+```jsx
+import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
+
+function UserSignUp() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [userData, setUserData] = useState({})
+
+  const submitHandler = (e) => {
+    e.preventDefault();
+    setUserData({
+      fullName: {
+        firstName: firstName,
+        lastName: lastName
+      },
+      email: email,
+      password: password
+    })
+    
+    setEmail('')
+    setPassword('')
+    setFirstName('')
+    setLastName('')
+  }
+
+  return (
+    <div className='p-7 h-screen flex flex-col justify-between'>
+      <div>
+        <img className='w-16 mb-10' src="../../1659761100uber-logo-png.png" />
+        <form onSubmit={(e) => {
+          submitHandler(e)
+        }}>
+          <h3 className='text-lg font-medium mb-2'>What's your name?</h3>
+          <div className='flex gap-4 mb-6'>
+            <input 
+              required 
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='First name'
+              value={firstName}
+              onChange={(e) =>{
+                setFirstName(e.target.value)
+              }}
+            />
+            <input 
+              required 
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='Last name'
+              value={lastName}
+              onChange={(e) => {
+                setLastName(e.target.value)
+              }}
+            />
+          </div>
+          <h3 className='text-lg font-medium mb-2'>What's your email?</h3>
+          <input 
+            required 
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-6 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="email" 
+            placeholder='email@example.com'
+          />
+          
+          <h3 className='text-lg font-medium mb-2'>Enter Password</h3>
+          <input 
+            required 
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-6 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="password" 
+            placeholder='password'
+          />
+          <button
+            className='bg-[#111] rounded mb-3 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+          >Login</button>
+
+          <p className='text-center'>Already have an account? <Link to='/login' className='text-blue-600'> Login here</Link></p>
+        </form>
+      </div>
+
+      <div>
+        <p className='text-[10px] leading-tight'>This site is protected by reCAPTCHA and the <span className='underline'>Google Privacy Policy</span> and <span className='underline'>Terms of Service apply</span></p>
+      </div>
+    </div>
+  )
+}
+
+export default UserSignUp
+```
+- add the below code in CaptainSignUp.jsx with two-way binding
+```jsx
+import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
+
+function CaptainSignUp() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [userData, setUserData] = useState({})
+
+  const submitHandler = (e) => {
+    e.preventDefault();
+    setUserData({
+      fullName: {
+        firstName: firstName,
+        lastName: lastName
+      },
+      email: email,
+      password: password
+    })
+    
+    setEmail('')
+    setPassword('')
+    setFirstName('')
+    setLastName('')
+  }
+
+  return (
+    <div className='p-7 h-screen flex flex-col justify-between'>
+      <div>
+      <img className='w-20 mb-2' src="..\uber-driver.svg" />
+      <form onSubmit={(e) => {
+          submitHandler(e)
+        }}>
+          <h3 className='text-lg font-medium mb-2'>What's your name?</h3>
+          <div className='flex gap-4 mb-6'>
+            <input 
+              required 
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='First name'
+              value={firstName}
+              onChange={(e) =>{
+                setFirstName(e.target.value)
+              }}
+            />
+            <input 
+              required 
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='Last name'
+              value={lastName}
+              onChange={(e) => {
+                setLastName(e.target.value)
+              }}
+            />
+          </div>
+          <h3 className='text-lg font-medium mb-2'>What's your email?</h3>
+          <input 
+            required 
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-6 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="email" 
+            placeholder='email@example.com'
+          />
+          
+          <h3 className='text-lg font-medium mb-2'>Enter Password</h3>
+          <input 
+            required 
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-6 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="password" 
+            placeholder='password'
+          />
+          <button
+            className='bg-[#111] rounded mb-3 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+          >Sign Up</button>
+
+          <p className='text-center'>Already have an account? <Link to='/captain-login' className='text-blue-600'> Login here</Link></p>
+        </form>
+      </div>
+
+      <div>
+        <p className='text-[10px] leading-tight'>This site is protected by reCAPTCHA and the <span className='underline'>Google Privacy Policy</span> and <span className='underline'>Terms of Service apply</span></p>
+      </div>
+    </div>
+  )
+}
+
+export default CaptainSignUp
+```
+- write context for centralizing our data, we could have used redux tool kit here too
+- create a folder named "context"
+- create a file src/context/UserContext.jsx and write rafce then click enter
+- now i have to wrap the whole app into userContext using main.jsx
+- add and update the below code in main.jsx
+```jsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+import {BrowserRouter} from 'react-router-dom'
+import UserContext from './context/UserContext.jsx'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <UserContext>
+    <BrowserRouter>
+    <App />
+    </BrowserRouter>
+    </UserContext>
+  </StrictMode>,
+)
+```
+- add the below code in src/context/UserContext.jsx
+```jsx
+import React, { createContext, useState } from 'react'
+
+export const UserDataContext = createContext()
+
+const UserContext = ({children}) => {
+
+  const [user, setUser] = useState({
+    email:'',
+    fullName: {
+      firstName: '',
+      lastName: ''
+    }
+  })
+
+  return (
+    <div>
+      <UserDataContext.Provider value={[user, setUser]}>
+      {children}
+      </UserDataContext.Provider>
+    </div>
+  )
+}
+
+export default UserContext
+```
+- completed home, login, signup pages for user and captain 
+- 

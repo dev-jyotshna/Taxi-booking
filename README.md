@@ -1650,4 +1650,8 @@ const UserContext = ({children}) => {
 export default UserContext
 ```
 - completed home, login, signup pages for user and captain 
-- 
+- git branch -M frontend
+- git push -u origin frontend
+
+## merge the code in frontend branch into main branch
+- git pull origin frontend

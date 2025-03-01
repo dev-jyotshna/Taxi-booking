@@ -1,23 +1,40 @@
-import React, { useState } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useContext, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import axios from 'axios'
+import {UserDataContext} from '../context/userContext'
 
-function UserSignUp() {
+const UserSignUp = () => {
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
   const [userData, setUserData] = useState({})
 
-  const submitHandler = (e) => {
+  const navigate = useNavigate()
+
+  const {user, setUser} = useContext(UserDataContext)
+
+  const submitHandler = async (e) => {
     e.preventDefault();
-    setUserData({
-      fullName: {
-        firstName: firstName,
-        lastName: lastName
+
+    const newUser = {
+      fullname: {
+        firstname: firstName,
+        lastname: lastName
       },
       email: email,
       password: password
-    })
+    }
+
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/users/register`, newUser)
+    
+    if (response.status === 201) {
+      const data = response.data
+
+      setUser(data.user)
+      localStorage.setItem('token', data.token)
+      navigate('/home')
+    }
     
     setEmail('')
     setPassword('')
@@ -28,7 +45,7 @@ function UserSignUp() {
   return (
     <div className='p-7 h-screen flex flex-col justify-between'>
       <div>
-        <img className='w-16 mb-10' src="../../1659761100uber-logo-png.png" />
+        <img className='w-16 mb-10' src="../src/assets/1659761100uber-logo-png.png" />
         <form onSubmit={(e) => {
           submitHandler(e)
         }}>
@@ -80,7 +97,7 @@ function UserSignUp() {
           />
           <button
             className='bg-[#111] rounded mb-3 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
-          >Sign Up</button>
+          >Create Account</button>
 
           <p className='text-center'>Already have an account? <Link to='/login' className='text-blue-600'> Login here</Link></p>
         </form>

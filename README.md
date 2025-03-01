@@ -1655,3 +1655,968 @@ export default UserContext
 
 ## merge the code in frontend branch into main branch
 - git pull origin frontend
+- git checkout main
+- git merge frontend
+- git push -u origin main
+
+## backend to frontend 
+### Integrating user endpoints with react
+- rename current pages/Home.jsx to Start.jsx 
+- make another pages as Home.jsx and route the path into App.jsx
+```jsx
+import React, { useContext } from 'react'
+import { Route, Routes } from 'react-router-dom'
+import Start from './pages/Start'
+import Home from './pages/Home'
+import UserLogin from './pages/UserLogin'
+import UserSignUp from './pages/UserSignUp'
+import CaptainLogin from './pages/CaptainLogin'
+import CaptainSignUp from './pages/CaptainSignUp'
+
+const App = () => {
+
+  return (
+    <div >
+      <Routes>
+        <Route path='/' element={<Start />}/>
+        <Route path='/login' element={<UserLogin />}/>
+        <Route path='/signup' element={<UserSignUp />}/>
+        <Route path='/captain-login' element={<CaptainLogin />}/>
+        <Route path='/captain-signup' element={<CaptainSignUp />}/>
+        <Route path='/home' element={<Home />}/>
+      </Routes>
+    </div>
+  )
+}
+
+export default App
+```
+- add the below code and add the useNavigate into pages/UserSignUp.jsx 
+- to send the data we get from the frontend to the server we use axios
+- npm i axios
+- since url changes in development and in production we use a URL varaiable in .env file in react app
+- to set the user we use context
+```jsx
+import React, { useContext, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import axios from 'axios'
+import {UserDataContext} from '../context/userContext'
+
+const UserSignUp = () => {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [userData, setUserData] = useState({})
+
+  const navigate = useNavigate()
+
+  const {user, setUser} = useContext(UserDataContext)
+
+  const submitHandler = async (e) => {
+    e.preventDefault();
+
+    const newUser = {
+      fullname: {
+        firstname: firstName,
+        lastname: lastName
+      },
+      email: email,
+      password: password
+    }
+
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/users/register`, newUser)
+    
+    if (response.status === 201) {
+      const data = response.data
+
+      setUser(data.user)
+
+      navigate('/home')
+    }
+    
+    setEmail('')
+    setPassword('')
+    setFirstName('')
+    setLastName('')
+  }
+
+  return (
+    <div className='p-7 h-screen flex flex-col justify-between'>
+      <div>
+        <img className='w-16 mb-10' src="../../1659761100uber-logo-png.png" />
+        <form onSubmit={(e) => {
+          submitHandler(e)
+        }}>
+          <h3 className='text-lg font-medium mb-2'>What's your name?</h3>
+          <div className='flex gap-4 mb-6'>
+            <input 
+              required 
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='First name'
+              value={firstName}
+              onChange={(e) =>{
+                setFirstName(e.target.value)
+              }}
+            />
+            <input 
+              required 
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='Last name'
+              value={lastName}
+              onChange={(e) => {
+                setLastName(e.target.value)
+              }}
+            />
+          </div>
+          <h3 className='text-lg font-medium mb-2'>What's your email?</h3>
+          <input 
+            required 
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-6 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="email" 
+            placeholder='email@example.com'
+          />
+          
+          <h3 className='text-lg font-medium mb-2'>Enter Password</h3>
+          <input 
+            required 
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-6 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="password" 
+            placeholder='password'
+          />
+          <button
+            className='bg-[#111] rounded mb-3 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+          >Create Account</button>
+
+          <p className='text-center'>Already have an account? <Link to='/login' className='text-blue-600'> Login here</Link></p>
+        </form>
+      </div>
+
+      <div>
+        <p className='text-[10px] leading-tight'>This site is protected by reCAPTCHA and the <span className='underline'>Google Privacy Policy</span> and <span className='underline'>Terms of Service apply</span></p>
+      </div>
+    </div>
+  )
+}
+
+export default UserSignUp
+```
+- check and send data in frontend to backend
+- in Frontend terminal wrte "npm run dev"
+- in Backend terminal wrte "npx nodemon"
+- bug FIX: not able to navigate to /home url as i used if statement to check reponse status to be 201 but i sent thebackend reponse status as 200 so i was not able to navigate 
+  - Soln used console.log everywhere in pages/UserSIgnUp.jsx in if statement then found that we are getting response status as 200 instead of 200 so I checked Backend/controller/user.controllers.js and sent 201 now
+- No Changes in Frontend/src/pages/UserSignUp.jsx
+- Changes in Backend/controller/user.controllers.js from     res.status(200).json( {token, user}) 
+- to: 
+```jsx
+    const user = await createUser({
+        firstname: fullname.firstname,
+        lastname: fullname.lastname,
+        email,
+        password: hashedPassword
+    });
+
+    const token = user.generateAuthToken();
+
+    res.status(201).json( {token, user})
+}
+```
+- add code to integrate user endpoints(backend) with react and update with below code in pages/UserLogin.jsx 
+```jsx
+import React, { useContext, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { UserDataContext } from '../context/userContext'
+import axios from 'axios'
+
+function UserLogin() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [userData, setUserData] = useState({})
+
+  const navigate = useNavigate()
+
+  const { user, setUser } = useContext(UserDataContext)
+
+
+  const submitHandler = async (e) => {
+    e.preventDefault();
+    
+    const userData = {
+      email: email,
+      password: password
+    }
+
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/users/login`, userData)
+
+    if(response.status === 200) {
+      const data = response.data
+      setUser(data.user)
+      navigate('/home')
+    }
+
+    setEmail('')
+    setPassword('')
+  }
+
+  return (
+    <div className='p-7 h-screen flex flex-col justify-between'>
+      <div>
+        <img className='w-16 mb-10' src="../../1659761100uber-logo-png.png" />
+        <form onSubmit={(e) => {
+          submitHandler(e)
+        }}>
+          <h3 className='text-lg font-medium mb-2'>What's your email?</h3>
+          <input 
+            required 
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-7 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="email" 
+            placeholder='email@example.com'
+          />
+          
+          <h3 className='text-lg font-medium mb-2'>Enter Password</h3>
+          <input 
+            required 
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-7 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="password" 
+            placeholder='password'
+          />
+          <button
+            className='bg-[#111] rounded mb-3 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+          >Login</button>
+
+          <p className='text-center'>New here? <Link to='/signup' className='text-blue-600'> Create new Account</Link></p>
+        </form>
+      </div>
+
+      <div>
+        <Link to='/captain-login'
+          className='bg-[#10b461] flex items-center justify-center rounded mb-5 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+        >Sign in as Captain</Link>
+      </div>
+    </div>
+  )
+}
+
+export default UserLogin
+```
+- right now home is an unprotected route
+- a logged in user should be the only one who should get to got to home route
+- for that we need an higher order function(UserProtectedWrapper) that checks if the user is logged in or not
+- create a file Frontend/src/pages/UserProtectedWrapper.jsx
+- if the user exists then it will return the children if not it will navigate the user to login page
+- add the below code in Frontend/src/pages/UserProtectedWrapper.jsx
+```jsx
+import React, { useContext } from 'react'
+import { UserDataContext } from '../context/userContext'
+import { useNavigate } from 'react-router-dom'
+
+function UserProtectedWrapper({children}) {
+
+    const { user } = useContext(UserDataContext)
+    const navigate = useNavigate()
+
+    if(! user.email) {
+        navigate('/login')
+    }
+  return (
+    <>
+        {children}
+    </>
+  )
+}
+
+export default UserProtectedWrapper
+```
+- here if the user reloads the page they can get logged out 
+- so instead of depending on user we can depend on token
+- whenever the user logs in, since we are using setUser , we can also use localstorage to set item token
+- update the pages/UserLogin.jsx with the code below
+```jsx
+    if(response.status === 200) {
+      const data = response.data
+      setUser(data.user)
+      localStorage.setItem('token', data.token)
+      navigate('/home')
+    }
+```
+- update this portion in pages/SignUp.jsx too
+```jsx
+    
+    if (response.status === 201) {
+      const data = response.data
+
+      setUser(data.user)
+      localStorage.setItem('token', data.token)
+      navigate('/home')
+    }
+```
+- to depend the login to a token instead of user the changes will be from
+```jsx
+function UserProtectedWrapper({children}) {
+
+    const { user } = useContext(UserDataContext)
+    const navigate = useNavigate()
+
+    if(! user.email) {
+        navigate('/login')
+    }
+  return (
+    <>
+        {children}
+    </>
+  )
+}
+```
+- to
+```jsx
+import React, { useContext } from 'react'
+import { UserDataContext } from '../context/userContext'
+import { useNavigate } from 'react-router-dom'
+
+function UserProtectedWrapper({children}) {
+
+  const token = localStorage.getItem('token')
+  const navigate = useNavigate()
+
+  if(! token) {
+      navigate('/login')
+  }
+  return (
+    <>
+        {children}
+    </>
+  )
+}
+
+export default UserProtectedWrapper
+```
+- Now we need to wrap the Home component in App.jsx with UserProtectedWrapper component
+- update the code in App.jsx
+```jsx
+import React, { useContext } from 'react'
+import { Route, Routes } from 'react-router-dom'
+import Start from './pages/Start'
+import Home from './pages/Home'
+import UserLogin from './pages/UserLogin'
+import UserSignUp from './pages/UserSignUp'
+import CaptainLogin from './pages/CaptainLogin'
+import CaptainSignUp from './pages/CaptainSignUp'
+import UserProtectedWrapper from './pages/UserProtectedWrapper'
+
+const App = () => {
+
+  return (
+    <div >
+      <Routes>
+        <Route path='/' element={<Start />}/>
+        <Route path='/login' element={<UserLogin />}/>
+        <Route path='/signup' element={<UserSignUp />}/>
+        <Route path='/captain-login' element={<CaptainLogin />}/>
+        <Route path='/captain-signup' element={<CaptainSignUp />}/>
+        <Route path='/home' element={
+          <UserProtectedWrapper>
+            <Home />
+          </UserProtectedWrapper>
+        }/>
+      </Routes>
+    </div>
+  )
+}
+
+export default App
+```
+- logging in user in the browser we got to Home page, the delete the token from Application>localStorage dev tool, then reloading the page
+
+-  add route in App.jsx
+```jsx
+        <Route path='/home' element={
+          <UserProtectedWrapper>
+            <Home />
+          </UserProtectedWrapper>
+        }/>
+        <Route path='/user/logout' element={
+          <UserProtectedWrapper>
+            <UserLogout />
+          </UserProtectedWrapper>
+        } />
+      </Routes>
+```
+- Create Frontend/pages/UserLogout.jsx 
+
+- after user login we go to home , then writing localhost:5173/user/logout in the url we correctly log out from the user account
+- but home route is still unprotected, meaning when we got to localhost:5173/home we can still access it without logging in
+- now we use usEffect hook in UserProtectedWrapper for it to remove access of home unprotected
+- add the below code in Frontend/src/pages/UserProtectedWrapper.jsx
+```jsx
+import React, { useContext, useEffect } from 'react'
+import { UserDataContext } from '../context/userContext'
+import { useNavigate } from 'react-router-dom'
+
+function UserProtectedWrapper({children}) {
+
+  const token = localStorage.getItem('token')
+  const navigate = useNavigate()  
+
+  useEffect(() => {
+    if(!token) {
+      navigate('/login')
+    }
+  })
+
+  return (
+    <>
+      {children}
+    </>
+  )
+}
+
+export default UserProtectedWrapper
+```
+
+### Integrating captain endpoints with react
+- Create Frontend/src/context/CaptainContext.jsx
+- add below code in it
+```jsx
+import { createContext, useContext, useState } from "react";
+
+export const CaptainDataContext = createContext();
+
+
+const CaptainContext = ({ children }) => {
+    const [ captain, setCaptain ] = useState(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [ error, setError ] = useState(null);
+
+    const updateCaptain = (captainData) => {
+        setCaptain(captainData)
+    };
+
+    const value = {
+        captain,
+        setCaptain,
+        isLoading,
+        setIsLoading,
+        error,
+        setError,
+        updateCaptain
+    };
+
+    return (
+        <CaptainDataContext.Provider value={value}>
+            {children}
+        </CaptainDataContext.Provider>
+    )
+}
+
+export default CaptainContext
+```
+- Wrap the react app in CaptainContext element similarly to UserContext element in main.jsx
+```jsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+import {BrowserRouter} from 'react-router-dom'
+import UserContext from './context/UserContext.jsx'
+import CaptainContext from './context/CaptainContext.jsx'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <CaptainContext>
+      <UserContext>
+        <BrowserRouter>
+          <App />
+        </BrowserRouter>
+      </UserContext>
+    </CaptainContext>
+  </StrictMode>,
+)
+
+```
+- use context, add vehicle details and add the below code in Frontend/src/pages/CaptainSignUp.jsx
+```jsx
+import React, { useContext, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { CaptainDataContext } from '../context/CaptainContext'
+import axios from 'axios'
+
+function CaptainSignUp() {
+
+  const navigate = useNavigate()
+
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+  const [firstName, setFirstName] = useState('')
+  const [lastName, setLastName] = useState('')
+  const [ vehicleColor, setVehicleColor ] = useState('')
+  const [ vehiclePlate, setVehiclePlate ] = useState('')
+  const [ vehicleCapacity, setVehicleCapacity ] = useState('')
+  const [ vehicleType, setVehicleType ] = useState('')
+
+  const { captain, setCaptain } = useContext(CaptainDataContext)
+
+  const submitHandler = async (e) => {
+    e.preventDefault();
+    const newCaptain = {
+      fullname: {
+        firstname: firstName,
+        lastname: lastName
+      },
+      email: email,
+      password: password,
+      vehicle: {
+        color: vehicleColor,
+        plate: vehiclePlate,
+        capacity: vehicleCapacity,
+        vehicleType: vehicleType
+      }
+    }
+
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/captains/register`, newCaptain)
+
+    if (response.status === 201) {
+      const data = response.data
+      setCaptain(data.captain)
+      localStorage.setItem('token', data.token)
+      navigate('/captan-home')
+    }
+    
+    setEmail('')
+    setPassword('')
+    setFirstName('')
+    setLastName('')
+    setVehicleColor('')
+    setVehiclePlate('')
+    setVehicleCapacity('')
+    setVehicleType('')
+  }
+
+  return (
+    <div className='p-5 h-screen flex flex-col justify-between'>
+      <div>
+      <img className='w-20 mb-2' src="..\uber-driver.svg" />
+      <form onSubmit={(e) => {
+          submitHandler(e)
+        }}>
+          <h3 className='text-lg font-medium mb-2'>What's your name?</h3>
+          <div className='flex gap-4 mb-5'>
+            <input 
+              required 
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='First name'
+              value={firstName}
+              onChange={(e) =>{
+                setFirstName(e.target.value)
+              }}
+            />
+            <input 
+              required 
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='Last name'
+              value={lastName}
+              onChange={(e) => {
+                setLastName(e.target.value)
+              }}
+            />
+          </div>
+          <h3 className='text-lg font-medium mb-2'>What's your email?</h3>
+          <input 
+            required 
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-5 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="email" 
+            placeholder='email@example.com'
+          />
+          
+          <h3 className='text-lg font-medium mb-2'>Enter Password</h3>
+          <input 
+            required 
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-5 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="password" 
+            placeholder='password'
+          />
+
+          <h3 className='text-lg font-medium mb-2'>Vehicle Information</h3>
+          <div className='flex gap-4 mb-5'>
+            <input 
+              required
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='Vehicle Color'
+              value={vehicleColor}
+              onChange={(e) => {
+                setVehicleColor(e.target.value)
+              }}
+            />
+            <input 
+              required
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='Vehicle Plate'
+              value={vehiclePlate}
+              onChange={(e) => {
+                setVehiclePlate(e.target.value)
+              }}
+            />
+          </div>
+          <div className='flex gap-4 mb-5'>
+            <input 
+              required
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              placeholder='Vehicle Capacity'
+              value={vehicleCapacity}
+              onChange={(e) => {
+                setVehicleCapacity(e.target.value)
+              }}
+            />
+            <select 
+              required
+              className='bg-[#eeeeee] rounded w-1/2 px-4 py-2 text-lg placeholder:text-base'
+              type="text" 
+              value={vehicleType}
+              onChange={(e) => {
+                setVehicleType(e.target.value)
+              }}
+            >
+              <option value="" disabled>Select Vehicle Type</option>
+              <option value="car">Car</option>
+              <option value="auto">Auto</option>
+              <option value="motorcycle">Motorcycle</option>
+            </select>
+          </div>
+          <button
+            className='bg-[#111] rounded mb-3 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+          >Create Captain Account</button>
+
+          <p className='text-center'>Already have an account? <Link to='/captain-login' className='text-blue-600'> Login here</Link></p>
+        </form>
+      </div>
+
+      <div>
+        <p className='text-[10px] mt-6 leading-tight'>This site is protected by reCAPTCHA and the <span className='underline'>Google Privacy Policy</span> and <span className='underline'>Terms of Service apply</span></p>
+      </div>
+    </div>
+  )
+}
+
+export default CaptainSignUp
+```
+- create another page pages/CaptainHome.jsx and write rfce then click enter
+- add the route in Frontend/src/App.jsx
+```jsx
+        <Route path='/captain-home' element={<CaptainHome />} />
+      </Routes>
+    </div>
+  )
+}
+```
+- add the below code in Frontend/src/pages/CaptainLogin.jsx to integrate captain login route endpoint with react
+```jsx
+import React, { useContext, useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import { CaptainDataContext } from '../context/CaptainContext'
+import axios from 'axios'
+
+function CaptainLogin() {
+  const [email, setEmail] = useState('')
+  const [password, setPassword] = useState('')
+
+  const navigate = useNavigate()
+
+  const { captain, setCaptain } = useContext(CaptainDataContext)
+
+  const submitHandler = async (e) => {
+    e.preventDefault();
+    
+    const captainData = {
+      email: email,
+      password: password
+    }
+
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/captains/login`, captainData)
+
+    if (response.status === 200) {
+      const data = response.data
+      setCaptain(data.captain)
+      localStorage.setItem('token', data.token)
+      navigate('/captain-home')
+    }
+
+    setEmail('')
+    setPassword('')
+  }
+
+  return (
+    <div className='p-7 h-screen flex flex-col justify-between'>
+      <div>
+        <img className='w-20 mb-2' src="..\uber-driver.svg" />
+        <form onSubmit={(e) => {
+          submitHandler(e)
+        }}>
+          <h3 className='text-lg font-medium mb-2'>What's your email?</h3>
+          <input 
+            required 
+            value={email}
+            onChange={(e) => {
+              setEmail(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-7 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="email" 
+            placeholder='email@example.com'
+          />
+          
+          <h3 className='text-lg font-medium mb-2'>Enter Password</h3>
+          <input 
+            required 
+            value={password}
+            onChange={(e) => {
+              setPassword(e.target.value);
+            }}
+            className='bg-[#eeeeee] rounded mb-7 px-4 py-2  w-full text-lg placeholder:text-base'
+            type="password" 
+            placeholder='password'
+          />
+          <button
+            className='bg-[#111] rounded mb-3 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+          >Login</button>
+
+          <p className='text-center'>Join a fleet? <Link to='/captain-signup' className='text-blue-600'> Register as a captain</Link></p>
+        </form>
+      </div>
+
+      <div>
+        <Link to='/login'
+          className='bg-[#cd4204] flex items-center justify-center rounded mb-5 px-4 py-2  w-full text-lg text-white font-semibold placeholder:text-base'
+        >Sign in as User</Link>
+      </div>
+    </div>
+  )
+}
+
+export default CaptainLogin
+```
+- and to ensure the Capatin Home is only accessed when Captain is logged in, we delete token from dev tools Application then localstorage , since i can still access the captain home page , meaning the captain home page is unprotected so we will use CaptainProtectedWrapper to wrap around the app to get the captain home page protected
+- add below code in Frontend/src/pages/CaptainProtectedWrapper.jsx
+```jsx
+import React, { useContext, useEffect } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { CaptainDataContext } from '../context/CaptainContext'
+
+function CaptainProtectedWrapper({children}) {
+
+  const token = localStorage.getItem('token')
+  const navigate = useNavigate()  
+  const { CaptainContext, setCaptain } = useContext(CaptainDataContext)
+
+  useEffect(() => {
+    if(!token) {
+      navigate('/captain-login')
+    }
+  })
+
+  return (
+    <>
+      {children}
+    </>
+  )
+}
+
+export default CaptainProtectedWrapper
+```
+- add and update the CaptainProtectedWrapper elment in the route for captain-home in Frontend/src/App.jsx
+```jsx
+        <Route path='/captain-home' element={
+          <CaptainProtectedWrapper>
+            <CaptainHome />
+          </CaptainProtectedWrapper>
+        } />
+      </Routes>
+    </div>
+  )
+}
+
+export default App
+```
+- now captain-home is protected as after logging in as captain, then deleting token from devtools Application>localStorage (meaning we are logging out) we are redirected to captain-login route
+- Here's the problem: token will be made for both the user and the captain, so check if we are getting the correct token, we request data of the captain by using the token , is we get the correct data fron their profile page the we can render the children as it is , in other case if we get an error back, we navigate it back to the captain-login page
+- add and update below code in CaptainProtectedWrapper.jsx
+```jsx
+import React, { useContext, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { CaptainDataContext } from '../context/CaptainContext'
+import axios from 'axios'
+
+function CaptainProtectedWrapper({children}) {
+
+  const token = localStorage.getItem('token')
+  const navigate = useNavigate()  
+  const { CaptainContext, setCaptain } = useContext(CaptainDataContext)
+  const [ isLoading, setIsLoading ] = useState(true)
+
+  useEffect(() => {
+    if(!token) {
+      navigate('/captain-login')
+    }
+  }, [ token ])
+
+  axios.get(`${import.meta.env.VITE_BASE_URL}/captains/profile`, {
+    headers: {
+        Authorization: `Bearer ${token}`
+    }
+  }).then(response => {
+    if (response.status === 200) {
+        setCaptain(response.data.captain)
+        setIsLoading(false)
+    }
+  })
+    .catch(err => {
+        console.log(err);
+        localStorage.removeItem('token')
+        navigate('/captain-login')
+        
+    })
+
+  if (isLoading) {
+    return (
+        <div>Loading...</div>
+    )
+  }
+
+  return (
+    <>
+      {children}
+    </>
+  )
+}
+
+export default CaptainProtectedWrapper
+```
+- similarly we will do it in the UserProtectedWrapper.jsx as well to enhance the security of the uer in the application
+```jsx
+import React, { useContext, useEffect, useState } from 'react'
+import { UserDataContext } from '../context/userContext'
+import { useNavigate } from 'react-router-dom'
+import axios from 'axios'
+
+function UserProtectedWrapper({children}) {
+
+  const token = localStorage.getItem('token')
+  const navigate = useNavigate()  
+  const { user, setUser } = useContext(UserDataContext)
+  const [ isLoading, setIsLoading ] = useState(true)
+
+  useEffect(() => {
+    if(!token) {
+      navigate('/login')
+    }
+  }, [ token ])
+
+  axios.get(`${import.meta.env.VITE_BASE_URL}/users/profile`, {
+    headers: {
+        Authorization: `Bearer ${token}`
+    }
+  }).then(response => {
+    if (response.status === 200) {
+        setUser(response.data.captain)
+        setIsLoading(false)
+    }
+  })
+    .catch(err => {
+        console.log(err);
+        localStorage.removeItem('token')
+        navigate('/login')
+        
+    })
+
+  if (isLoading) {
+    return (
+        <div>Loading...</div>
+    )
+  }
+
+  return (
+    <>
+      {children}
+    </>
+  )
+}
+
+export default UserProtectedWrapper
+```
+- create logout route for captains as well
+- create a file Frontend/src/pages/CaptainLogout.jsx
+```jsx
+import axios from 'axios'
+import React from 'react'
+import { useNavigate } from 'react-router-dom'
+
+function CaptainLogout() {
+    const token = localStorage.getItem('token')
+    const navigate = useNavigate()
+
+    axios.get(`${import.meta.env.VITE_BASE_URL}/captains/logout`, {
+        headers: {
+            Authorization: `Bearer ${token}`
+        }
+    }).then((response) => {
+        if (response.status === 200) {
+            localStorage.removeItem('token')
+            navigate('/captain-login')
+        }
+    })
+
+  return (
+    <div>CaptainLogout</div>
+  )
+}
+
+export default CaptainLogout
+```
+- add the route in Frontend/src/App.jsx
+```jsx
+        <Route path='/captains/logout' element={
+          <CaptainProtectedWrapper>
+            <CaptainLogout />
+          </CaptainProtectedWrapper>
+        } />
+      </Routes>
+    </div>
+  )
+}
+
+export default App
+```
+## Creating User Home Screen UI
+- Moved the images from Frontend/public folder to Frontend/src/assets
+- make changes in code wherever the images were used
+- Create Home UI for user
+- add the below code in Frontend/src/pages/Home.jsx

@@ -2618,5 +2618,958 @@ export default App
 ## Creating User Home Screen UI
 - Moved the images from Frontend/public folder to Frontend/src/assets
 - make changes in code wherever the images were used
-- Create Home UI for user
+- Create Home UI for user with two-way binding
+- npm i gsap  => provide hooks for moving animations
+- npm i @gsap/react 
+- RESOURCE: remixicon.com to get arrows
+- npm install remixicon --save
+- use import 'remixicon/fonts/remixicon.css' in Home.jsx too
 - add the below code in Frontend/src/pages/Home.jsx
+```jsx
+import React, { useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  return (
+    <div className='h-screen relative'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+              }}
+              value={pickup}
+              onChange={(e) => {
+                setPickup(e.target.value)
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+              }}
+              value={destination}
+              onChange={(e) => {
+                setDestination(e.target.value)
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+              <LocationSearchPanel />
+        </div>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+
+## Completing location search panel UI
+- create a folder named components in Frontend/src
+- create a file in it Named "LocationSearchPanel.jsx"
+- add below code in it and add its element in pages/Home.jsx too
+```jsx
+import React from 'react'
+
+function LocationSearchPanel() {
+  return (
+    <div>
+        {/* this is just a sample data */}
+        <div className='flex gap-4 items-center my-4 justify-start '>
+            <h2 className='bg-[#eee] h-10 w-12 flex items-center justify-center rounded-full'><i className="ri-map-pin-2-fill"></i></h2>
+            <h4 className='font-medium'>Chhattarpur Mandir, Chhattarpur, New Delhi</h4>
+        </div>
+        <div className='flex gap-4 items-center my-4 justify-start '>
+            <h2 className='bg-[#eee] h-10 w-12 flex items-center justify-center rounded-full'><i className="ri-map-pin-2-fill"></i></h2>
+            <h4 className='font-medium'>Chhattarpur Mandir, Chhattarpur, New Delhi</h4>
+        </div>
+        <div className='flex gap-4 items-center my-4 justify-start '>
+            <h2 className='bg-[#eee] h-10 w-12 flex items-center justify-center rounded-full'><i className="ri-map-pin-2-fill"></i></h2>
+            <h4 className='font-medium'>Chhattarpur Mandir, Chhattarpur, New Delhi</h4>
+        </div>
+        <div className='flex gap-4 items-center my-4 justify-start '>
+            <h2 className='bg-[#eee] h-10 w-12 flex items-center justify-center rounded-full'><i className="ri-map-pin-2-fill"></i></h2>
+            <h4 className='font-medium'>Chhattarpur Mandir, Chhattarpur, New Delhi</h4>
+        </div>
+    </div>
+  )
+}
+
+export default LocationSearchPanel
+```
+- this panel shows if the destination is reachable for not
+
+## Completing User Home UI
+- create a hidden panel that shows the opitons of vehicle and their price after destination is selected in Home.jsx
+- add overflow hidden in line 41 of Home.jsx to remove LocationSearchPanel as the scrollable part , so it only comes up when clicking the pickup loaction input element
+- get INR symbol "₹" from clicking ctrl + alt + 4
+- FIX BUG: in the below code, the components always showed border instead of only showing it when i clicked (tried everthing the gave up for the next day)
+  <div className='flex border-2 active:border-black rounded-xl mb-2 w-full p-3 items-center justify-between'>
+    - Soln: changed the position of active to the code below for it to work properly as i wanted to
+    - code:
+    <div className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+
+- add the below code in pages/Home.jsx for the vehicle panel & LocationPanel component and its functionality
+```jsx
+import React, { useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+  const vehiclePanelRef = useRef(null)
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false)
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  useGSAP(function() {
+    if (vehiclePanelOpen) {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehiclePanelOpen])
+
+  return (
+    <div className='h-screen relative overflow-hidden'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+              }}
+              value={pickup}
+              onChange={(e) => {
+                setPickup(e.target.value)
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+              }}
+              value={destination}
+              onChange={(e) => {
+                setDestination(e.target.value)
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+              <LocationSearchPanel setPanelOpen={setPanelOpen} setVehiclePanelOpen={setVehiclePanelOpen} />
+        </div>
+      </div>
+
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-14 rounded-xl translate-y-full'>
+        <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+          setVehiclePanelOpen(false)
+        }}>
+        <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Choose a Vehicle</h3>
+        
+        <div className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+            <img className='h-13' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+                <div className='ml-2 w-1/2'>
+                  <h4 className='font-medium text-lg'>UberGo <span><i className="ri-user-3-fill"></i><sub>4</sub></span></h4>
+                  <h5 className='font-medium text-sm'>2 mins away</h5>
+                  <p className=' text-xs text-gray-600'>Affordable, compact rides</p>
+                </div>
+                <h2 className='text-lg font-semibold'>₹193.20</h2>
+            </div>
+            <div className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+                <img className='h-13' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_368,w_552/v1649231091/assets/2c/7fa194-c954-49b2-9c6d-a3b8601370f5/original/Uber_Moto_Orange_312x208_pixels_Mobile.png" alt="" />
+                <div className=' w-1/2'>
+                  <h4 className='font-medium text-lg'>Moto <span><i className="ri-user-3-fill"></i><sub>1</sub></span></h4>
+                  <h5 className='font-medium text-sm'>3 mins away</h5>
+                  <p className=' text-xs text-gray-600'>Affordable motorcycle rides</p>
+                </div>
+                <h2 className='text-lg font-semibold'>₹60</h2>
+            </div>
+            <div className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+                <img className='h-15' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,w_956,h_638/v1682350114/assets/c2/296eac-574a-4a81-a787-8a0387970755/original/UberBlackXL.png" alt="" />
+                <div className='ml-2 w-1/2'>
+                  <h4 className='font-medium text-lg'>Premier <span><i className="ri-user-3-fill"></i><sub>4</sub></span></h4>
+                  <h5 className='font-medium text-sm'>4 mins away</h5>
+                  <p className=' text-xs text-gray-600'>Affordable, compact rides</p>
+                </div>
+                <h2 className='text-lg font-semibold'>₹193.20</h2>
+            </div>
+            <div className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+                <img className='h-15' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_368,w_552/v1648431773/assets/1d/db8c56-0204-4ce4-81ce-56a11a07fe98/original/Uber_Auto_558x372_pixels_Desktop.png" alt="" />
+                <div className='ml-2 w-1/2'>
+                  <h4 className='font-medium text-lg'>UberAuto <span><i className="ri-user-3-fill"></i><sub>3</sub></span></h4>
+                  <h5 className='font-medium text-sm'>2 mins away</h5>
+                  <p className=' text-xs text-gray-600'>Affordable auto rides</p>
+                </div>
+                <h2 className='text-lg font-semibold'>₹119.20</h2>
+            </div>
+        </div>
+    </div>
+  )
+}
+
+export default Home
+```
+- add the below code in pages/LocationSearchPanel.jsx
+```jsx
+import React from 'react'
+
+function LocationSearchPanel(props) {
+    console.log(props);
+    
+    
+    // sample array of location
+    const locations = [
+        'Chhattarpur Mandir, Chhattarpur, New Delhi',
+        'DAV, R.K. Puram, New Delhi',
+        '7A, Singhania Hotel, Hauz Khas, New Delhi ',
+        'Gungnam, Majnu ka tilla, New Delhi'
+    ]
+  return (
+    <div>
+        {/* this is just a sample data */}
+        {
+            locations.map(function(elem, idx) {
+                return <div key={idx} onClick={() => {
+                    props.setVehiclePanelOpen(true)
+                    props.setPanelOpen(false)
+                }} className='flex gap-4 border-2 p-3 rounded-xl items-center my-2 justify-start border-gray-100 active:border-black '>
+                            <h2 className='bg-[#eee] h-10 w-12 flex items-center justify-center rounded-full'><i className="ri-map-pin-2-fill"></i></h2>
+                            <h4 className='font-medium'>{elem}</h4>
+                        </div>
+            })
+        }
+        
+    </div>
+  )
+}
+
+export default LocationSearchPanel
+```
+- create a new file VehiclePanel.jsx in components folder and add the vehiclepanel code from current Home.jsx code in it
+- add the below code in Frontend/src/components/VehiclePanel.jsx & do rfce + enter
+```jsx
+```
+- now the code in pages/Home.jsx will look like
+```jsx
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-14 rounded-xl translate-y-full'>
+        <VehiclePanel setVehiclePanelOpen={setVehiclePanelOpen}/>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+- create the file "ConfirmRide.jsx" in folder "pages" 
+- add the below code in components/ConfirmedRide.jsx for the details of selected car
+```jsx
+import React from 'react'
+
+function ConfirmRide(props) {
+  return (
+    <div>
+      <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+          props.setVehiclePanelOpen(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Confirm your ride</h3>
+
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <img className='h-20' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Kaikondrahalli, Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Kaikondrahalli, Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹193.20</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Kaikondrahalli, Bengaluru, Karnataka</p>
+              </div>
+            </div>
+          </div>
+          <button className='w-full mt-5 bg-green-600 text-white font-semibold p-2 rounded-lg'>Confirm</button>
+        </div>
+    </div>
+  )
+}
+
+export default ConfirmRide
+```
+
+- make changes in pages/Home.jsx
+```jsx
+import React, { useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+import VehiclePanel from '../components/VehiclePanel'
+import ConfirmRide from '../components/ConfirmRide'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+  const vehiclePanelRef = useRef(null)
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false)
+  const confirmRidePanelRef = useRef(null)
+  const [confirmRidePanel, setConfirmRidePanel] = useState(false)
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  useGSAP(function() {
+    if (vehiclePanelOpen) {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehiclePanelOpen])
+
+  useGSAP(function() {
+    if (confirmRidePanel) {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePanel])
+
+  return (
+    <div className='h-screen relative overflow-hidden'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+              }}
+              value={pickup}
+              onChange={(e) => {
+                setPickup(e.target.value)
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+              }}
+              value={destination}
+              onChange={(e) => {
+                setDestination(e.target.value)
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+              <LocationSearchPanel setPanelOpen={setPanelOpen} setVehiclePanelOpen={setVehiclePanelOpen} />
+        </div>
+      </div>
+
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full'>
+        <VehiclePanel setConfirmRidePanel={setConfirmRidePanel} setVehiclePanelOpen={setVehiclePanelOpen}/>
+      </div>
+
+      {/* Confirmed Ride */}
+      <div ref={confirmRidePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <ConfirmRide setConfirmRidePanel={setConfirmRidePanel}/>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+- make changes in components/VehiclePanel.jsx
+```jsx
+import React from 'react'
+
+function VehiclePanel(props) {
+  return (
+    <div>
+        <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+          props.setVehiclePanelOpen(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Choose a Vehicle</h3>
+        
+        <div onClick={() => {
+            props.setConfirmRidePanel(true)
+        }} className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+          <img className='h-13' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+          <div className='ml-2 w-1/2'>
+            <h4 className='font-medium text-lg'>UberGo <span><i className="ri-user-3-fill"></i><sub>4</sub></span></h4>
+            <h5 className='font-medium text-sm'>2 mins away</h5>
+            <p className=' text-xs text-gray-600'>Affordable, compact rides</p>
+          </div>
+          <h2 className='text-lg font-semibold'>₹193.20</h2>
+        </div>
+        <div onClick={() => {
+            props.setConfirmRidePanel(true)
+        }} className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+          <img className='h-13' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_368,w_552/v1649231091/assets/2c/7fa194-c954-49b2-9c6d-a3b8601370f5/original/Uber_Moto_Orange_312x208_pixels_Mobile.png" alt="" />
+          <div className=' w-1/2'>
+            <h4 className='font-medium text-lg'>Moto <span><i className="ri-user-3-fill"></i><sub>1</sub></span></h4>
+            <h5 className='font-medium text-sm'>3 mins away</h5>
+            <p className=' text-xs text-gray-600'>Affordable motorcycle rides</p>
+          </div>
+          <h2 className='text-lg font-semibold'>₹60</h2>
+        </div>
+        <div onClick={() => {
+            props.setConfirmRidePanel(true)
+        }} className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+          <img className='h-15' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,w_956,h_638/v1682350114/assets/c2/296eac-574a-4a81-a787-8a0387970755/original/UberBlackXL.png" alt="" />
+          <div className='ml-2 w-1/2'>
+            <h4 className='font-medium text-lg'>Premier <span><i className="ri-user-3-fill"></i><sub>4</sub></span></h4>
+            <h5 className='font-medium text-sm'>4 mins away</h5>
+            <p className=' text-xs text-gray-600'>Affordable, compact rides</p>
+          </div>
+          <h2 className='text-lg font-semibold'>₹193.20</h2>
+        </div>
+        <div onClick={() => {
+            props.setConfirmRidePanel(true)
+        }} className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+          <img className='h-15' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_368,w_552/v1648431773/assets/1d/db8c56-0204-4ce4-81ce-56a11a07fe98/original/Uber_Auto_558x372_pixels_Desktop.png" alt="" />
+          <div className='ml-2 w-1/2'>
+            <h4 className='font-medium text-lg'>UberAuto <span><i className="ri-user-3-fill"></i><sub>3</sub></span></h4>
+            <h5 className='font-medium text-sm'>2 mins away</h5>
+            <p className=' text-xs text-gray-600'>Affordable auto rides</p>
+          </div>
+          <h2 className='text-lg font-semibold'>₹119.20</h2>
+        </div>
+    </div>
+  )
+}
+
+export default VehiclePanel
+```
+- after clicking confirm in ConfirmRide.jsx we need to make a page for the driver to accept the request (named looking for drivers)
+- add changes in components/ConfirmRide.jsx
+```jsx
+import React from 'react'
+
+function ConfirmRide(props) {
+  return (
+    <div>
+      <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+          props.setConfirmRidePanel(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Confirm your ride</h3>
+
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <img className='h-20' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Kaikondrahalli, Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹193.20</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash Cash</p>
+              </div>
+            </div>
+          </div>
+          <button onClick={() => {
+            props.setVehicleFound(true)
+            props.setConfirmRidePanel(false)
+          }} className='w-full mt-5 bg-green-600 text-white font-semibold p-2 rounded-lg'>Confirm</button>
+        </div>
+    </div>
+  )
+}
+
+export default ConfirmRide
+```
+- create a file components/LookingForDriver.jsx and add the below code in it
+```jsx
+import React from 'react'
+
+function LookingForDriver(props) {
+  return (
+    <div>
+      <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+          props.setVehicleFound(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Looking for nearby drivers</h3>
+
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <img className='h-20' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Kaikondrahalli, Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹193.20</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash cash</p>
+              </div>
+            </div>
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default LookingForDriver
+```
+- create a file components/WaitingForDriver.jsx and add the below code in it
+```jsx
+import React from 'react'
+
+function WaitingForDriver(props) {
+  return (
+    <div>
+      <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+          props.setWaitingForDriver(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Meet at the pickup point</h3>
+        <div className='flex items-center justify-between'>
+          <img className='h-10' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+          <div className='text-right'>
+            <h2 className='text-sm font-medium uppercase text-gray-700 '>Jyotshna</h2>
+            <h4 className='text-xl font-semibold uppercase -mt-1 -mb-1'>MP04 JD 9462</h4>
+            <p className='text-sm text-gray-600'>Maruti Suzuki Alto K10</p>
+          </div>
+        </div>
+
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Kaikondrahalli, Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹193.20</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash cash</p>
+              </div>
+            </div>
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default WaitingForDriver
+```
+- add the changes in pages/Home.jsx to access "WaitingForDriver" element and "LookingForDriver" element
+```jsx
+import React, { useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+import VehiclePanel from '../components/VehiclePanel'
+import ConfirmRide from '../components/ConfirmRide'
+import LookingForDriver from '../components/LookingForDriver'
+import WaitingForDriver from '../components/WaitingForDriver'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+  const vehiclePanelRef = useRef(null)
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false)
+  const confirmRidePanelRef = useRef(null)
+  const [confirmRidePanel, setConfirmRidePanel] = useState(false)
+  const vehicleFoundRef = useRef(null)
+  const [vehicleFound, setVehicleFound] = useState(false)
+  const waitingForDriverRef = useRef(null)
+  const [waitingForDriver, setWaitingForDriver] = useState(false)
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  useGSAP(function() {
+    if (vehiclePanelOpen) {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehiclePanelOpen])
+
+  useGSAP(function() {
+    if (confirmRidePanel) {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePanel])
+
+  useGSAP(function() {
+    if (vehicleFound) {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehicleFound])
+
+  useGSAP(function() {
+    if (waitingForDriver) {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [waitingForDriver])
+
+  return (
+    <div className='h-screen relative overflow-hidden'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+              }}
+              value={pickup}
+              onChange={(e) => {
+                setPickup(e.target.value)
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+              }}
+              value={destination}
+              onChange={(e) => {
+                setDestination(e.target.value)
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+              <LocationSearchPanel setPanelOpen={setPanelOpen} setVehiclePanelOpen={setVehiclePanelOpen} />
+        </div>
+      </div>
+
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full'>
+        <VehiclePanel setConfirmRidePanel={setConfirmRidePanel} setVehiclePanelOpen={setVehiclePanelOpen}/>
+      </div>
+
+      {/* Confirmed Ride */}
+      <div ref={confirmRidePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <ConfirmRide setConfirmRidePanel={setConfirmRidePanel} setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Looking for nearby drivers, vehicle found */}
+      <div ref={vehicleFoundRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <LookingForDriver setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Waiting for the driver*/}
+      <div ref={waitingForDriverRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl'>
+        <WaitingForDriver setWaitingForDriver={setWaitingForDriver}/>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+- NOTE: I feel like LookingForDriver page is unneccessary if i'm wrong i will update this line else i'll deploy it as is. And there is no way i can access the WaitingForDriver panel rn
+
+## Create Captain Home UI
+- 

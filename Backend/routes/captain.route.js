@@ -32,7 +32,6 @@ router.route('/login').post(
 )
 
 router.route('/profile').get(authCaptain, getCaptainProfile)
-
-router.get('/logout', authCaptain, logoutCaptain)
+router.route('/logout').get(authCaptain, logoutCaptain)
 
 export default router

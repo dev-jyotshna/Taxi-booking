@@ -3570,6 +3570,658 @@ function Home() {
 export default Home
 ```
 - NOTE: I feel like LookingForDriver page is unneccessary if i'm wrong i will update this line else i'll deploy it as is. And there is no way i can access the WaitingForDriver panel rn
+- create a file pages/Riding.jsx to track the riding and rfce then enter
+- add the route for Riding in App.jsx as well
+```jsx
+import React, { useContext } from 'react'
+import { Route, Routes } from 'react-router-dom'
+import Start from './pages/Start'
+import Home from './pages/Home'
+import UserLogin from './pages/UserLogin'
+import UserSignUp from './pages/UserSignUp'
+import CaptainLogin from './pages/CaptainLogin'
+import CaptainSignUp from './pages/CaptainSignUp'
+import UserProtectedWrapper from './pages/UserProtectedWrapper'
+import UserLogout from './pages/UserLogout'
+import CaptainHome from './pages/CaptainHome'
+import CaptainProtectedWrapper from './pages/CaptainProtectedWrapper'
+import CaptainLogout from './pages/CaptainLogout'
+import Riding from './pages/Riding'
+
+const App = () => {
+
+  return (
+    <div >
+      <Routes>
+        <Route path='/' element={<Start />}/>
+        <Route path='/login' element={<UserLogin />}/>
+        <Route path='/signup' element={<UserSignUp />}/>
+        <Route path='/captain-login' element={<CaptainLogin />}/>
+        <Route path='/captain-signup' element={<CaptainSignUp />}/>
+        <Route path='/home' element={
+          <UserProtectedWrapper>
+            <Home />
+          </UserProtectedWrapper>
+        }/>
+        <Route path='/users/logout' element={
+          <UserProtectedWrapper>
+            <UserLogout />
+          </UserProtectedWrapper>
+        } />
+        <Route path='/riding' element={
+          <UserProtectedWrapper>
+            <Riding />
+          </UserProtectedWrapper>
+        } />
+        <Route path='/captain-home' element={
+          <CaptainProtectedWrapper>
+            <CaptainHome />
+          </CaptainProtectedWrapper>
+        } />
+        <Route path='/captains/logout' element={
+          <CaptainProtectedWrapper>
+            <CaptainLogout />
+          </CaptainProtectedWrapper>
+        } />
+      </Routes>
+    </div>
+  )
+}
+
+export default App
+```
+- add the below code in Riding.jsx
+```jsx
+import React from 'react'
+import { Link } from 'react-router-dom'
+
+function Riding() {
+  return (
+    <div className='h-screen'>
+        <Link to='/home' className='fixed h-10 w-10 right-2 top-2 bg-white flex items-center justify-center rounded-full'>
+            <i className="text-lg font-medium ri-home-5-line"></i>
+        </Link>
+        <div className='h-1/2'>
+            <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+
+        </div>
+        <div className='h-1/2 p-4'>
+            <div className='flex items-center justify-between'>
+                <img className='h-10' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+                <div className='text-right'>
+                    <h2 className='text-sm font-medium uppercase text-gray-700 '>Jyotshna</h2>
+                    <h4 className='text-xl font-semibold uppercase -mt-1 -mb-1'>MP04 JD 9462</h4>
+                    <p className='text-sm text-gray-600'>Maruti Suzuki Alto K10</p>
+                </div>
+            </div>
+
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹193.20</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash cash</p>
+              </div>
+            </div>
+          </div>
+        </div>
+            <button className='w-full mt-5 bg-green-600 text-white font-semibold p-2 rounded-lg'>Make a Payment</button>
+        </div>
+    </div>
+  )
+}
+
+export default Riding
+```
 
 ## Create Captain Home UI
+- not able to continue captain login after 7 secs
+the bug :
+```jsx
+  useEffect(() => {
+    if(!token) {
+      navigate('/captain-login')
+    }
+  }, [ token ])
+  axios.get(`${import.meta.env.VITE_BASE_URL}/captains/profile`, {
+    headers: {
+        Authorization: `Bearer ${token}`
+    }
+  }).then(response => {
+    if (response.status === 200) {
+        setCaptain(response.data.captain)
+        setIsLoading(false)
+    }
+  })
+    .catch(err => {
+        console.log(err);
+        localStorage.removeItem('token')
+        navigate('/captain-login')
+        
+    })
+  ```
+- BUG FIX soln 
+- in Frontend/src/pages/CaptainProtectedWrapper.jsx
+```jsx
+import React, { useContext, useEffect, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
+import { CaptainDataContext } from '../context/CaptainContext'
+import axios from 'axios'
+
+function CaptainProtectedWrapper({children}) {
+
+  const token = localStorage.getItem('token')
+  const navigate = useNavigate()  
+  const { captain, setCaptain } = useContext(CaptainDataContext)
+  const [ isLoading, setIsLoading ] = useState(true)
+
+  useEffect(() => {
+    if(!token) {
+      navigate('/captain-login')
+    }
+    axios.get(`${import.meta.env.VITE_BASE_URL}/captains/profile`, { //this was the bug soln where it loggedin only for 7 secs
+      headers: {
+          Authorization: `Bearer ${token}`
+      }
+    }).then(response => {
+      if (response.status === 200) {
+          setCaptain(response.data.captain)
+          setIsLoading(false)
+      }
+    })
+      .catch(err => {
+          console.log(err);
+          localStorage.removeItem('token')
+          navigate('/captain-login')
+          
+      })
+  
+  }, [ token ])
+
+  
+  if (isLoading) {
+    return (
+        <div>Loading...</div>
+    )
+  }
+
+  return (
+    <>
+      {children}
+    </>
+  )
+}
+
+export default CaptainProtectedWrapper
+```
+- add the pages/CaptainHome.jsx
+```jsx
+import React from 'react'
+import { Link } from 'react-router-dom'
+import CaptainDetails from '../components/CaptainDetails'
+
+function CaptainHome() {
+  return (
+    <div className='h-screen'>
+        <div className='fixed p-3 top-0 flex items-center justify-between w-full'>
+          <img className='w-16' src="../src/assets/uber-driver.svg" alt="" />
+          <Link to='/captains/logout' className='h-10 w-10 bg-white flex items-center justify-center rounded-full'>
+              <i className="text-lg font-medium ri-logout-box-r-line"></i>
+          </Link>
+        </div>
+        <div className='h-2/3'>
+            <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+
+        </div>
+        <div className='h-1/3 p-4 rounded-t-xl'>
+            <CaptainDetails />
+        </div>
+    </div>
+  )
+}
+
+export default CaptainHome
+```
+- create a file components/CaptainDetails.jsx
+```jsx
+import React from 'react'
+
+function CaptainDetails() {
+  return (
+    <div>
+        <div className='flex items-center justify-between'>
+              <div className='flex items-center justify-start gap-3'>
+                <img className='h-10 w-10 rounded-full object-cover' src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlv0zjWmdsmjxIL4cE-qpaLi-6F89HJ_JiKw&s" alt="" />
+                <h4 className='text-lg font-medium'>Anvi Chahar</h4>
+              </div>
+              <div className='text-right'>
+                <h3 className='text-lg font-semibold'>₹298.57</h3>
+                <p className='text-sm text-gray-600 left-0'>Earned</p>
+              </div>
+            </div>
+            <div className='flex p-4 mt-3 bg-gray-100 rounded-xl justify-center gap-5 items-start'>
+              <div className='text-center'>
+                <i className="font-thin mb-2 text-gray-400 text-3xl ri-time-line"></i>
+                <h5 className='text-lg font-medium mb-2 mt-2'>10.2</h5>
+                <p className='text-xs text-gray-400 uppercase'>Hours online</p>
+              </div>
+              <div className='text-center'>
+                <i className="font-thin mb-2 text-gray-400 text-3xl ri-speed-up-line"></i>
+                <h5 className='text-lg font-medium mb-2 mt-2'>30 KM</h5>
+                <p className='text-xs text-gray-400 uppercase'>Total distance</p>
+              </div>
+              <div className='text-center'>
+                <i className="font-thin mb-2 text-gray-400 text-3xl ri-booklet-line"></i>
+                <h5 className='text-lg font-medium mb-2 mt-2'>24</h5>
+                <p className='text-xs text-gray-400 uppercase'>Total jobs</p>
+              </div>
+            </div>
+    </div>
+  )
+}
+
+export default CaptainDetails
+```
+- adding request accept pop-up/panel 
+- create file components/RidePopUp.jsx
+```jsx
+import React from 'react'
+
+function RidePopUp(props) {
+  return (
+    <div className='bg-gray-100 p-4 rounded-2xl'>
+        <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+            props.setRidePopUpPanel(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>New Ride Available!</h3>
+        <div className='flex items-center justify-between mt-3 p-3 bg-blue-200 rounded-lg'>
+            <div className='flex items-center gap-3'>
+            <img className='h-12 w-12 rounded-full object-cover' src="https://images.unsplash.com/photo-1499996860823-5214fcc65f8f?q=80&w=932&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="" />
+            <h2 className='text-lg font-medium'>Deepshah Rajput</h2>
+            </div>
+            <h5 className='text-lg font-semibold'>2.2 KM</h5>
+        </div>
+        
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Kaikondrahalli, Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹193.20</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash Cash</p>
+              </div>
+            </div>
+          </div>
+          <div className='flex items-center justify-between mt-5'>
+            <button onClick={() => {
+              props.setRidePopUpPanel(false)
+            }} className=' bg-gray-100 text-gray-600 font-semibold p-3 px-8 rounded-lg'>Ignore</button>
+            <button onClick={() => {
+              props.setConfirmRidePopUpPanel(true)
+            }} className=' bg-green-600 text-white font-semibold p-3 px-8 rounded-lg'>Accept</button>
+           
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default RidePopUp
+```
+- add the below code in pages/CaptainHome.jsx
+```jsx
+import React, { useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import CaptainDetails from '../components/CaptainDetails'
+import RidePopUp from '../components/RidePopUp'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import ConfirmRidePopUp from '../components/ConfirmRidePopUp'
+
+function CaptainHome() {
+
+  const [ridePopUpPanel, setRidePopUpPanel] = useState(true)
+  const ridePopUpPanelRef = useRef(null)
+  const [confirmRidePopUpPanel, setConfirmRidePopUpPanel] = useState(false)
+  const confirmRidePopUpPanelRef = useRef(null)
+
+  useGSAP(function() {
+    if (ridePopUpPanel) {
+      gsap.to(ridePopUpPanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(ridePopUpPanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [ridePopUpPanel])
+
+  useGSAP(function() {
+    if (confirmRidePopUpPanel) {
+      gsap.to(confirmRidePopUpPanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePopUpPanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePopUpPanel])
+
+  return (
+    <div className='h-screen'>
+        <div className='fixed p-3 top-0 flex items-center justify-between w-full'>
+          <img className='w-16' src="../src/assets/uber-driver.svg" alt="" />
+          <Link to='/captains/logout' className='h-10 w-10 bg-white flex items-center justify-center rounded-full'>
+              <i className="text-lg font-medium ri-logout-box-r-line"></i>
+          </Link>
+        </div>
+        <div className='h-2/3'>
+            <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+
+        </div>
+        <div className='h-1/3 p-4 rounded-t-xl'>
+            <CaptainDetails />
+        </div>
+        <div ref={ridePopUpPanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <RidePopUp setRidePopUpPanel={setRidePopUpPanel} setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} />
+        </div>
+        <div ref={confirmRidePopUpPanelRef} className='fixed h-screen w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <ConfirmRidePopUp setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} setRidePopUpPanel={setRidePopUpPanel} />
+        </div>
+    </div>
+  )
+}
+
+export default CaptainHome
+```
+- create a file components/ConfirmRidePopUp.jsx
+```jsx
+import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
+
+function ConfirmRidePopUp(props) {
+
+    const [otp, setOtp] = useState('')
+
+    const submitHandler = (e) => {
+        e.preventDefault()
+    }
+  return (
+    <div>
+        <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+            props.setConfirmRidePopUpPanel(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Confirm this ride to Start</h3>
+        <div className='flex items-center justify-between mt-3 p-3 bg-blue-200 rounded-lg'>
+            <div className='flex items-center gap-3'>
+            <img className='h-12 w-12 rounded-full object-cover' src="https://images.unsplash.com/photo-1499996860823-5214fcc65f8f?q=80&w=932&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="" />
+            <h2 className='text-lg font-medium'>Deepshah Rajput</h2>
+            </div>
+            <h5 className='text-lg font-semibold'>2.2 KM</h5>
+        </div>
+        
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Kaikondrahalli, Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹193.20</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash Cash</p>
+              </div>
+            </div>
+          </div>
+          {/* Confirm OTP */}
+
+          <div className='mt-6 w-full'>
+            <form onSubmit={(e) => {
+                submitHandler(e)
+            }}>
+                <input value={otp} onChange={(e) => setOtp(e.target.value)} type="text" className='bg-[#eee] px-6 py-4 text-lg rounded-lg w-full mt-3 font-mono' placeholder='Enter OTP'/>
+                <Link to='/captain-riding' className='w-full mt-5 text-lg flex justify-center bg-green-600 text-white font-semibold p-3 rounded-lg'>Confirm</Link>
+                <button onClick={() => {
+                    props.setConfirmRidePopUpPanel(false)
+                    props.setRidePopUpPanel(false)
+                }} className='w-full mt-1 bg-red-700 text-lg text-white font-semibold p-3 rounded-lg'>Cancel</button>
+            </form>
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default ConfirmRidePopUp
+```
+- add the /captain-riding route in App.jsx
+```jsx
+import React, { useContext } from 'react'
+import { Route, Routes } from 'react-router-dom'
+import Start from './pages/Start'
+import Home from './pages/Home'
+import UserLogin from './pages/UserLogin'
+import UserSignUp from './pages/UserSignUp'
+import CaptainLogin from './pages/CaptainLogin'
+import CaptainSignUp from './pages/CaptainSignUp'
+import UserProtectedWrapper from './pages/UserProtectedWrapper'
+import UserLogout from './pages/UserLogout'
+import CaptainHome from './pages/CaptainHome'
+import CaptainProtectedWrapper from './pages/CaptainProtectedWrapper'
+import CaptainLogout from './pages/CaptainLogout'
+import Riding from './pages/Riding'
+import CaptainRiding from './pages/CaptainRiding'
+
+const App = () => {
+
+  return (
+    <div >
+      <Routes>
+        <Route path='/' element={<Start />}/>
+        <Route path='/login' element={<UserLogin />}/>
+        <Route path='/signup' element={<UserSignUp />}/>
+        <Route path='/captain-login' element={<CaptainLogin />}/>
+        <Route path='/captain-signup' element={<CaptainSignUp />}/>
+        <Route path='/home' element={
+          <UserProtectedWrapper>
+            <Home />
+          </UserProtectedWrapper>
+        }/>
+        <Route path='/users/logout' element={
+          <UserProtectedWrapper>
+            <UserLogout />
+          </UserProtectedWrapper>
+        } />
+        <Route path='/riding' element={
+          <UserProtectedWrapper>
+            <Riding />
+          </UserProtectedWrapper>
+        } />
+        <Route path='/captain-home' element={
+          <CaptainProtectedWrapper>
+            <CaptainHome />
+          </CaptainProtectedWrapper>
+        } />
+        <Route path='/captains/logout' element={
+          <CaptainProtectedWrapper>
+            <CaptainLogout />
+          </CaptainProtectedWrapper>
+        } />
+        <Route path='/captain-riding' element={
+          <CaptainProtectedWrapper>
+            <CaptainRiding />
+          </CaptainProtectedWrapper>
+        } />
+      </Routes>
+    </div>
+  )
+}
+
+export default App
+```
+- create a file pages/CaptainRiding.jsx
+```jsx
+import React, { useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import FinishRide from '../components/FinishRide'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+
+function CaptainRiding(props) {
+    const [finishRidePanel, setFinishRidePanel] = useState(false)
+    const finishRidePanelRef = useRef(null)
+  
+    useGSAP(function() {
+      if (finishRidePanel) {
+        gsap.to(finishRidePanelRef.current, {
+          transform: 'translateY(0)'
+        })
+      }
+      else {
+        gsap.to(finishRidePanelRef.current, {
+          transform: 'translateY(100%)'
+        })
+      }
+    }, [finishRidePanel])
+
+  return (
+    <div className='h-screen'>
+        <div className='fixed p-3 top-0 flex items-center justify-between w-full'>
+          <img className='w-16' src="../src/assets/uber-driver.svg" alt="" />
+          <Link to='/captains/logout' className='h-10 w-10 bg-white flex items-center justify-center rounded-full'>
+              <i className="text-lg font-medium ri-logout-box-r-line"></i>
+          </Link>
+        </div>
+        <div className='h-4/5'>
+            <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+
+        </div>
+        <div className='h-1/5 p-6 flex items-center justify-between bg-yellow-400 relative'
+        onClick={()=>{
+            setFinishRidePanel(true)
+        }}>
+            <h5 className='p-1 text-center absolute w-[95%] top-0' onClick={() => {
+                props.setFinishRidePanel(false)
+            }}>
+            <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+            </h5>
+            <h4 className='text-xl font-semibold'>1.6 KM away</h4>
+            <button className=' bg-green-600 text-white font-semibold p-3 px-8 rounded-lg'>Complete Ride</button>
+        </div>
+        <div ref={finishRidePanelRef} className='fixed h-screen w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <FinishRide setFinishRidePanel={setFinishRidePanel}/>
+        </div>
+        
+    </div>
+  )
+}
+
+export default CaptainRiding
+```
+- add import 'remixicon/fonts/remixicon.css' in App.jsx
+- create a file components/FinishRide.jsx
+```jsx
+import React from 'react'
+import { Link } from 'react-router-dom'
+
+function FinishRide(props) {
+  return (
+    <div>
+        <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+            props.setFinishRidePanel(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Finish this Ride</h3>
+        <div className='flex items-center justify-between mt-3 p-4 border-2 border-yellow-400 rounded-lg'>
+            <div className='flex items-center gap-3'>
+            <img className='h-12 w-12 rounded-full object-cover' src="https://images.unsplash.com/photo-1499996860823-5214fcc65f8f?q=80&w=932&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="" />
+            <h2 className='text-lg font-medium'>Deepshah Rajput</h2>
+            </div>
+            <h5 className='text-lg font-semibold'>2.2 KM</h5>
+        </div>
+        
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Kaikondrahalli, Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Bengaluru, Karnataka</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹193.20</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash Cash</p>
+              </div>
+            </div>
+          </div>
+          {/* Confirm OTP */}
+
+          <div className='mt-6 w-full'>
+
+                <Link to='/captain-home' className='w-full mt-5 text-lg flex justify-center bg-green-600 text-white font-semibold p-3 rounded-lg'>Finish Ride</Link>
+               
+               <p className='mt-10 text-xs'>Click on finish ride button if you have completed the payment</p>
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default FinishRide
+```
+
+## Enabling Google Maps API
 - 

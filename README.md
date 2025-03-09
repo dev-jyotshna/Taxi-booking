@@ -4224,4 +4224,405 @@ export default FinishRide
 ```
 
 ## Enabling Google Maps API
+- npm i axios
+- use google maps api key in .env as GOOGLE_MAPS_API= 
+- create a file Backend/services/maps.service.js
+```js
+import axios from 'axios'
+
+export const getAddressCoordinate = async (address) => {
+    const apiKey = process.env.GOOGLE_MAPS_API;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+
+    try {
+        constresponse = await axios.get(url);
+        if (response.data.status === 'OK') {
+            const location = response.data.results[0].geometry.location;
+            return {
+                ltd: location.lat,
+                lng: location.lng
+            };
+        } else {
+            throw new Error('Unable to fetch coordinates');
+        }
+    } catch (error) {
+        console.error(error);
+        throw error;
+    }
+
+
+}
+```
+
+- create a file for routes Backend/routes/maps.route.js
+```js
+import { Router } from "express";
+import { authUser } from '../middleware/auth.middleware.js'
+import { getCoordinates } from "../controllers/maps.controller.js";
+import { query } from "express-validator";
+
+
+const router = Router()
+
+router.get('/get-coordinates', 
+    query('address').isString().isLength({ min: 3 }),
+    authUser, getCoordinates)
+
+export default router;
+```
+
+- create a file controller for maps controllers/maps.controller.js
+```js
+import { validationResult } from "express-validator";
+import { getAddressCoordinate } from "../services/maps.service";
+
+export const getCoordinates = async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+
+    const { address } = req.query;
+
+    try {
+        const coordinates = await getAddressCoordinate(address);
+        res.status(200).json(coordinates);
+    }
+    catch (error) {
+        res.status(404).json({ message: 'Coordinates not found'});
+    }
+}
+```
+- add the below code in Backend/app.js
+```js
+import express from "express"
+import cors from "cors"
+import cookieParser from "cookie-parser";
+
+const app = express()
+app.use(cors());
+
+app.use(express.json())
+app.use(express.urlencoded( {extended: true}))
+app.use(cookieParser())
+
+app.get('/', (req, res) => {
+    res.send('Hello World')
+})
+
+//import routes
+import userRouter from './routes/user.route.js'
+import captainRouter from './routes/captain.route.js'
+import mapsRouter from './routes/maps.route.js'
+
+app.use("/users", userRouter)
+app.use("/captains", captainRouter)
+app.use("/maps", mapsRouter)
+
+export {app}
+```
+- 
+- use postman to check the routes for following
+  1. get the lat & lng of the address=sheriyans coding school indrapuri   => in params of GET {{server}}/maps/get-coordinates and use header "Authorization" with "bearer <token>" with token of a user get get when we login or register as user (above code for this)
+  2. get the distance & time to cover that between to points GET http method and have params as origin & destination for distance and time taken to calculate , add origin and destination in the place of params and change th eroute to /get-distance-time (below code for this)
+  
+- add the below code in maps.route.js
+```js
+import { Router } from "express";
+import { authUser } from '../middleware/auth.middleware.js'
+import { getCoordinates, getDistanceTime } from "../controllers/maps.controller.js";
+import { query } from "express-validator";
+
+
+const router = Router()
+
+router.get('/get-coordinates', 
+    query('address').isString().isLength({ min: 3 }),
+    authUser, getCoordinates)
+
+router.get('/get-distance-time', 
+    query('origin').isString().isLength({ min: 3 }),
+    query('destination').isString().isLength({ min: 3 }),
+    authUser,
+    getDistanceTime
+)
+
+export default router;
+```
+- add the below code in maps.service.js
+```js
+import axios from 'axios'
+
+export const getAddressCoordinate = async (address) => {
+    const apiKey = process.env.GOOGLE_MAPS_API;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+
+    try {
+        constresponse = await axios.get(url);
+        if (response.data.status === 'OK') {
+            const location = response.data.results[0].geometry.location;
+            return {
+                ltd: location.lat,
+                lng: location.lng
+            };
+        } else {
+            throw new Error('Unable to fetch coordinates');
+        }
+    } catch (error) {
+        console.error(error);
+        throw error;
+    }
+
+
+}
+
+export const getDistance_Time = async (origin, destination) => {
+    if (!origin || !destination) {
+        throw new Error('Origin and destination are required')
+    }
+
+    const apiKey = process.env.GOOGLE_MAPS_API;
+
+    const url = `https://maps.google.com/maps/api/distancematrix/json?origin=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=${apiKey}`
+
+    try {
+
+        const response = await axios.get(url);
+        if (response.data.status === 'OK') {
+
+            if (response.data.rows[ 0 ].elements[ 0 ].status === 'ZERO_RESULTS') {
+                throw new Error('No routes found');
+            }
+
+            return response.data.rows[ 0 ].elements[ 0 ];
+        }
+        else {
+            throw new Error('Unable to fetch distance and time');
+        }
+    }
+    catch (err) {
+        console.error(err);
+        throw err;
+    }
+}
+```
+- add the below code in maps.controller.js
+```js
+import { validationResult } from "express-validator";
+import { getAddressCoordinate, getDistance_Time } from "../services/maps.service.js";
+
+export const getCoordinates = async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+
+    const { address } = req.query;
+
+    try {
+        const coordinates = await getAddressCoordinate(address);
+        res.status(200).json(coordinates);
+    }
+    catch (error) {
+        res.status(404).json({ message: 'Coordinates not found'});
+    }
+}
+
+export const getDistanceTime = async (req, res, next) => {
+
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        const { origin, destination } = req.query;
+
+        const distanceTime = await getDistance_Time(origin, destination);
+
+        res.status(200).json(distanceTime);
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Internal server error'});
+    }
+}
+```
+- 3. get the suggestions when we put in a location, add /get-suggestions in route then add input=sheriyan in params then send  (below code for this)
+
+- add the below code in maps.route.js
+```js
+import { Router } from "express";
+import { authUser } from '../middleware/auth.middleware.js'
+import { getCoordinates, getDistanceTime, getAutoCompleteSuggestions } from "../controllers/maps.controller.js";
+import { query } from "express-validator";
+
+
+const router = Router()
+
+router.get('/get-coordinates', 
+    query('address').isString().isLength({ min: 3 }),
+    authUser, getCoordinates)
+
+router.get('/get-distance-time', 
+    query('origin').isString().isLength({ min: 3 }),
+    query('destination').isString().isLength({ min: 3 }),
+    authUser,
+    getDistanceTime
+)
+
+router.get('/get-suggestions', 
+    query('input').isString().isLength({ min: 3 }),
+    authUser,
+    getAutoCompleteSuggestions
+)
+
+export default router;
+```
+- add the below code in maps.service.js
+```js
+import axios from 'axios'
+
+export const getAddressCoordinate = async (address) => {
+    const apiKey = process.env.GOOGLE_MAPS_API;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+
+    try {
+        constresponse = await axios.get(url);
+        if (response.data.status === 'OK') {
+            const location = response.data.results[0].geometry.location;
+            return {
+                ltd: location.lat,
+                lng: location.lng
+            };
+        } else {
+            throw new Error('Unable to fetch coordinates');
+        }
+    } catch (error) {
+        console.error(error);
+        throw error;
+    }
+
+
+}
+
+export const getDistance_Time = async (origin, destination) => {
+    if (!origin || !destination) {
+        throw new Error('Origin and destination are required')
+    }
+
+    const apiKey = process.env.GOOGLE_MAPS_API;
+
+    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=${apiKey}`
+
+    try {
+
+        const response = await axios.get(url);
+        if (response.data.status === 'OK') {
+
+            if (response.data.rows[ 0 ].elements[ 0 ].status === 'ZERO_RESULTS') {
+                throw new Error('No routes found');
+            }
+
+            return response.data.rows[ 0 ].elements[ 0 ];
+        }
+        else {
+            throw new Error('Unable to fetch distance and time');
+        }
+    }
+    catch (err) {
+        console.error(err);
+        throw err;
+    }
+}
+
+export const getSuggestions = async (input) => {
+    if (!input) {
+        throw new Error('query is required')
+    }
+
+    const apiKey = process.env.GOOGLE_MAPS_API;
+
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${apiKey}`
+
+    try {
+        const response = await axios.get(url);
+        if (response.data.status === 'OK') {
+            return response.data.predictions.map(prediction => prediction.description).filter(value => value);
+        } else {
+            throw new Error('Unable to fetch suggestions');
+        }
+    } catch (err) {
+        console.error(err);
+        throw err;
+    }
+}
+```
+- add the below code in maps.controller.js
+```js
+import { validationResult } from "express-validator";
+import { getAddressCoordinate, getDistance_Time, getSuggestions } from "../services/maps.service.js";
+
+export const getCoordinates = async (req, res, next) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+
+    const { address } = req.query;
+
+    try {
+        const coordinates = await getAddressCoordinate(address);
+        res.status(200).json(coordinates);
+    }
+    catch (error) {
+        res.status(404).json({ message: 'Coordinates not found'});
+    }
+}
+
+export const getDistanceTime = async (req, res, next) => {
+
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        const { origin, destination } = req.query;
+
+        const distanceTime = await getDistance_Time(origin, destination);
+
+        res.status(200).json(distanceTime);
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Internal server error'});
+    }
+}
+
+export const getAutoCompleteSuggestions = async (req, res, next) => {
+
+    try {
+        const errors = validationResult(req);
+        if (!errors.isEmpty()) {
+            return res.status(400).json({ errors: errors.array() });
+        }
+
+        const { input } = req.query;
+
+        const suggestions = await getSuggestions(input);
+
+        res.status(200).json(suggestions);
+    }
+    catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Internal server error'});
+    }
+}
+```
+
+## Creating rides in Backend
 - 

@@ -1,5 +1,7 @@
 # Taxi booking project
 
+- Google maps, live Tracking, contextapi, cors, , bcrpt.jwt, socketio and client, cookie-parser, axios, express, mongoose, crypto, gsap, tailwind, vite, remixicon, react-dom, react-router-dom, mongodb, port forwarding
+
 ## Set up
 - make sure the enty point is server.js here
 - create folder named Backend
@@ -8867,7 +8869,509 @@ export default Riding
 - Now Live Tracking will start use Google maps
 - create a file components/LiveTracking.jsx
 ```jsx
+import React, { useEffect } from 'react'
+import { LoadScript, GoogleMap, Marker } from '@react-google-maps/api'
+
+const containerStyle = {
+    width: '100%',
+    height: '100%'
+};
+
+const center = {
+    lat: -3.745,
+    lng: -38.523
+}
+
+function LiveTracking() {
+    const [currentPosition, setCurrentPosition] = useState(center)
+
+    useEffect(() => {
+        navigator.geolocation.getCurrentPosition((position) => {
+            const { latitude, longitude } = position.coords;
+            setCurrentPosition({
+                lat: latitude,
+                lng: longitude
+            });
+        });
+
+        const watchId = navigator.geolocation.watchPosition((position) => {
+            const { latitude, longitude } = position.coords;
+            setCurrentPosition({
+                lat: latitude,
+                lng: longitude
+            });
+        });
+
+        return () => navigator.geolocation.clearWatch(watchId);
+    }, []);
+
+    useEffect(() => {
+        const updatePosition = () => {
+            navigator.geolocation.getCurrentPosition((position) => {
+                const { latitude, longitude } = position.coords;
+
+                console.log('Position updated:', latitude, longitude);
+                setCurrentPosition({
+                    lat: latitude,
+                    lng: longitude
+                })
+            })
+        };
+
+        updatePosition(); //Initial position update
+
+        const intervalId = setInterval(updatePosition, 1000) // update every 1 secs
+    }, []);
+
+  return (
+    <LoadScript googleMapsApiKey={import.meta.env.VITE_GOOGLE_MAPS_API_KEY}>
+        <GoogleMap
+            mapContainerStyle={containerStyle}
+            center={currentPosition}
+            zoom={15}
+        >
+            <Marker position={currentPosition} />
+        </GoogleMap>
+    </LoadScript>
+  )
+}
+
+export default LiveTracking
 ```
 - to use google maps n react we install a package in Frontend folder
 - npm i @react-google-maps/api
 - it does not work w/o teh googe maps apikey we generated earlier , add it to our .env file here as well
+- add the below code in Home.jsx at LiveTracking element
+```jsx
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+import VehiclePanel from '../components/VehiclePanel'
+import ConfirmRide from '../components/ConfirmRide'
+import LookingForDriver from '../components/LookingForDriver'
+import WaitingForDriver from '../components/WaitingForDriver'
+import axios from 'axios'
+import { SocketContext } from '../context/SocketContext.jsx'
+import { UserDataContext } from '../context/UserContext.jsx'
+import { useNavigate } from 'react-router-dom'
+import LiveTracking from '../components/LiveTracking.jsx'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+  const vehiclePanelRef = useRef(null)
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false)
+  const confirmRidePanelRef = useRef(null)
+  const [confirmRidePanel, setConfirmRidePanel] = useState(false)
+  const vehicleFoundRef = useRef(null)
+  const [vehicleFound, setVehicleFound] = useState(false)
+  const waitingForDriverRef = useRef(null)
+  const [waitingForDriver, setWaitingForDriver] = useState(false)
+  const [pickupSuggestions, setPickupSuggestions] = useState([])
+  const [destinationSuggestions, setDestinationSuggestions] = useState([])
+  const [activeField, setActiveField] = useState(null)
+  const [fare, setFare] = useState({})
+  const [vehicleType, setVehicleType] = useState(null)
+  const [ride, setRide] = useState(null)
+
+  const navigate = useNavigate()
+
+  const { socket } = useContext(SocketContext);
+  const { user } = useContext(UserDataContext)
+
+  useEffect(() => {
+    socket.emit("join", { userType: "user", userId: user._id } )
+  }, [ user ])
+
+  socket.on('ride-confirmed', ride => {
+    setVehicleFound(false)
+    setWaitingForDriver(true)
+    setRide(ride)
+  })
+
+  socket.on('ride-started', ride => {
+    setWaitingForDriver(false)
+    navigate('/riding', { state: { ride }})
+  })
+  
+
+  const handlePickUpChange = async (e) => {
+    setPickup(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setPickupSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const handleDestinationChange = async (e) => {
+    setDestination(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setDestinationSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  useGSAP(function() {
+    if (vehiclePanelOpen) {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehiclePanelOpen])
+
+  useGSAP(function() {
+    if (confirmRidePanel) {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePanel])
+
+  useGSAP(function() {
+    if (vehicleFound) {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehicleFound])
+
+  useGSAP(function() {
+    if (waitingForDriver) {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [waitingForDriver])
+
+  async function findTrip() {
+    setVehiclePanelOpen(true)
+    setPanelOpen(false)
+
+    const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/rides/get-fare`, {
+      params: { pickup, destination },
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    setFare(response.data)
+  }
+
+  async function createRide() {
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/rides/create`, {
+      pickup,
+      destination,
+      vehicleType
+    }, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    console.log(response.data)
+  }
+
+  return (
+    <div className='h-screen relative overflow-hidden'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+        <LiveTracking />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('pickup')
+              }}
+              value={pickup}
+              onChange={(e) => {
+                handlePickUpChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('destination')
+              }}
+              value={destination}
+              onChange={(e) => {
+                handleDestinationChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+          <button 
+            onClick={findTrip}
+            className='bg-black text-white px-4 py-2 rounded-lg mt-3 w-full'>
+            Find Trip
+          </button>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+          <LocationSearchPanel 
+            suggestions={activeField === 'pickup' ? pickupSuggestions: destinationSuggestions}
+            setPanelOpen={setPanelOpen} 
+            setVehiclePanelOpen={setVehiclePanelOpen} 
+            setPickup={setPickup}
+            setDestination={setDestination}
+            activeField={activeField}
+          />
+        </div>
+      </div>
+
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full'>
+        <VehiclePanel 
+          selectVehicle={setVehicleType}
+          fare={fare} setConfirmRidePanel={setConfirmRidePanel} setVehiclePanelOpen={setVehiclePanelOpen}/>
+      </div>
+
+      {/* Confirmed Ride */}
+      <div ref={confirmRidePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <ConfirmRide 
+          createRide={createRide}
+          pickup={pickup}
+          destination={destination}
+          fare={fare}
+          vehicleType={vehicleType}
+          setConfirmRidePanel={setConfirmRidePanel} setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Looking for nearby drivers, vehicle found */}
+      <div ref={vehicleFoundRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <LookingForDriver 
+          createRide={createRide}
+          pickup={pickup}
+          destination={destination}
+          fare={fare}
+          vehicleType={vehicleType}
+          setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Waiting for the driver*/}
+      <div ref={waitingForDriverRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl'>
+        <WaitingForDriver 
+          ride={ride}
+          setVehicleFound={setVehicleFound}
+          setWaitingForDriver={setWaitingForDriver}
+          waitingForDriver={waitingForDriver}/>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+- add the below code in CaptainRiding.jsx for LiveTracking element
+```jsx
+import React, { useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import FinishRide from '../components/FinishRide'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import LiveTracking from '../components/LiveTracking'
+
+function CaptainRiding(props) {
+    const [finishRidePanel, setFinishRidePanel] = useState(false)
+    const finishRidePanelRef = useRef(null)
+    const location = useLocation()
+    const rideData = location.state?.ride
+  
+    useGSAP(function() {
+      if (finishRidePanel) {
+        gsap.to(finishRidePanelRef.current, {
+          transform: 'translateY(0)'
+        })
+      }
+      else {
+        gsap.to(finishRidePanelRef.current, {
+          transform: 'translateY(100%)'
+        })
+      }
+    }, [finishRidePanel])
+
+  return (
+    <div className='h-screen relative flex flex-col justify-end'>
+        <div className='fixed p-3 top-0 flex items-center justify-between w-full'>
+          <img className='w-16' src="../src/assets/uber-driver.svg" alt="" />
+          <Link to='/captains/logout' className='h-10 w-10 bg-white flex items-center justify-center rounded-full'>
+              <i className="text-lg font-medium ri-logout-box-r-line"></i>
+          </Link>
+        </div>
+
+        <div className='h-1/5 p-6 flex items-center justify-between bg-yellow-400 relative'
+        onClick={()=>{
+            setFinishRidePanel(true)
+        }}>
+            <h5 className='p-1 text-center absolute w-[95%] top-0' onClick={() => {
+                props.setFinishRidePanel(false)
+            }}>
+            <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+            </h5>
+            <h4 className='text-xl font-semibold'>1.6 KM away</h4>
+            <button className=' bg-green-600 text-white font-semibold p-3 px-8 rounded-lg'>Complete Ride</button>
+        </div>
+        <div ref={finishRidePanelRef} className='fixed h-screen w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <FinishRide 
+            ride={rideData}
+            setFinishRidePanel={setFinishRidePanel}/>
+        </div>
+
+        <div className='h-screen fixed w-screen top-0 z-[-1]'>
+            <LiveTracking />
+        </div>
+    </div>
+  )
+}
+
+export default CaptainRiding
+```
+- add the below code in Riding.jsx
+```jsx
+import React, { useContext } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { SocketContext } from '../context/SocketContext'
+import LiveTracking from '../components/LiveTracking'
+
+function Riding() {
+  const location = useLocation()
+  const { ride } = location.state ||{} // Retrieve ride data
+  const { socket } = useContext(SocketContext)
+  const navigate = useNavigate()
+
+  socket.on("ride-ended", () => {
+    navigate('/home')
+  })
+
+  return (
+    <div className='h-screen'>
+        <Link to='/home' className='fixed h-10 w-10 right-2 top-2 bg-white flex items-center justify-center rounded-full'>
+            <i className="text-lg font-medium ri-home-5-line"></i>
+        </Link>
+        <div className='h-1/2'>
+            <LiveTracking />
+        </div>
+        <div className='h-1/2 p-4'>
+            <div className='flex items-center justify-between'>
+                <img className='h-10' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+                <div className='text-right'>
+                    <h2 className='text-sm font-medium uppercase text-gray-700 '>{ride?.captain.fullname.firstname}</h2>
+                    <h4 className='text-xl font-semibold uppercase -mt-1 -mb-1'>{ride?.captain.vehicle.plate}</h4>
+                    <p className='text-sm text-gray-600'>Maruti Suzuki Alto K10</p>
+                </div>
+            </div>
+
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{ride?.destination}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹{ride?.fare}</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash cash</p>
+              </div>
+            </div>
+          </div>
+        </div>
+            <button className='w-full mt-5 bg-green-600 text-white font-semibold p-2 rounded-lg'>Make a Payment</button>
+        </div>
+    </div>
+  )
+}
+
+export default Riding
+```
+- add the LiveTracking element in Home.jsx as well
+- COMPLETED

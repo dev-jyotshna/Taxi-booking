@@ -777,10 +777,10 @@ const captainSchema = new mongoose.Schema({
         }
     },
     location: {
-        latitude: {
+        ltd: {
             type: Number
         },
-        longitude: {
+        lng: {
             type: Number
         }
     }
@@ -4625,4 +4625,4249 @@ export const getAutoCompleteSuggestions = async (req, res, next) => {
 ```
 
 ## Creating rides in Backend
-- 
+- create APIs for rides after user have chosen the pickup and destination 
+- create a file in Backend/routes/ride.route.js
+- here we need user, pickup location & destination then check it for validation
+```js
+import { Router } from "express";
+import { body } from 'express-validator'
+import { createRide } from "../controllers/ride.controller.js";
+import { authUser } from "../middleware/auth.middleware.js";
+
+const router = Router()
+
+router.post('/create', 
+    authUser,
+    body('pickup').isString().isLength({ min: 3 }).withMessage('Invalid pickup address'),
+    body('destination').isString().isLength({ min: 3 }).withMessage('Invalid destination address'),
+    body('vehicleType').isString().isIn([ 'auto', 'car', 'moto']).withMessage('Invalid vehicleType'),
+    createRide
+)
+
+export default router
+```
+- create a file controllers.ride.controller.js needs its model and its services
+```js
+import { validationResult } from "express-validator"
+import { create_Ride } from "../services/ride.service.js";
+
+export const createRide = async (req, res ) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { pickup, destination, vehicleType } = req.body;
+
+    try {
+        const ride = await create_Ride({ user: req.user._id, pickup, destination, vehicleType});
+        return res.status(201).json(ride);
+    }
+    catch( err ) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+```
+- create a file models/ride.model.js
+```js
+import mongoose from "mongoose";
+
+const rideSchema = new mongoose.Schema({
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    captain: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Captain'
+    },
+    pickup: {
+        type: String,
+        required: true
+    },
+    destination: {
+        type: String,
+        required: true
+    },
+    fare: {
+        type: Number,
+        required: true
+    },
+    status: {
+        type: String,
+        enum: ['pending', 'accepted', 'ongoing', 'completed', 'cancelled'],
+        default: 'pending'
+    },
+    duration: {
+        type: Number // in seconds
+    },
+    distance: {
+        type: Number // in metres
+    },
+    paymentId: {
+        type: String
+    },
+    orderId: {
+        type: String
+    },
+    signature: {
+        type: String
+    }
+})
+
+export const Ride = mongoose.model("Ride", rideSchema)
+```
+
+- create a file services/ride.service.js
+- fare will be calculated according to distance and time
+```js
+import { Ride } from "../models/ride.model.js"
+import { getDistance_Time } from "./maps.service.js"
+
+export async function getFare(pickup, destination) {
+    if (!pickup || !destination) {
+        throw new Error('Pickup and destination are required')
+    }
+
+    const distanceTime = await getDistance_Time(pickup, destination);
+
+    const baseFare = {
+        auto: 30,
+        car: 50,
+        moto: 20
+    };
+
+    const perKmRate = {
+        auto: 10,
+        car: 15,
+        moto: 8
+    };
+
+    const perMinuteRate = {
+        auto: 2,
+        car: 3,
+        moto: 1.5
+    };
+
+    console.log(distanceTime);
+
+    const fare = {
+        auto: baseFare.auto + ((distanceTime.distance.value / 1000) * perKmRate.auto) + ((distanceTime.duration.value/60) * perMinuteRate.auto),
+        car: baseFare.car + ((distanceTime.distance.value / 1000) * perKmRate.car) + ((distanceTime.duration.value/60) * perMinuteRate.car),
+        moto: baseFare.moto + ((distanceTime.distance.value / 1000) * perKmRate.moto) + ((distanceTime.duration.value/60) * perMinuteRate.moto),
+    };
+
+    return fare;
+}
+
+export const create_Ride = async ({
+    user, pickup, destination, vehicleType
+}) => {
+    if (!user || !pickup || !destination || !vehicleType) {
+        throw new Error('All fields are required')
+    }
+
+    const fare = await getFare(pickup, destination);
+
+    console.log(fare);
+
+    const ride = Ride.create({
+        user,
+        pickup,
+        destination,
+        fare: fare[ vehicleType ]
+    })
+
+    return ride
+}
+
+
+```
+- add the ride route in app.js
+```js
+import express from "express"
+import cors from "cors"
+import cookieParser from "cookie-parser";
+
+const app = express()
+app.use(cors());
+
+app.use(express.json())
+app.use(express.urlencoded( {extended: true}))
+app.use(cookieParser())
+
+app.get('/', (req, res) => {
+    res.send('Hello World')
+})
+
+//import routes
+import userRouter from './routes/user.route.js'
+import captainRouter from './routes/captain.route.js'
+import mapsRouter from './routes/maps.route.js'
+import rideRouter from './routes/ride.route.js'
+
+app.use("/users", userRouter)
+app.use("/captains", captainRouter)
+app.use("/maps", mapsRouter)
+app.use("/rides", rideRouter)
+
+export {app}
+```
+
+- check routes in postman, make a new POST request with {{server}}/rides/create url add body>raw data => 
+```json
+{
+    "pickup": "sheriyans coding school",
+    "destination": "new market bhopal",
+    "vehicleType": "car"
+}
+```
+in headers use Authorization=bearer <token> of a user(we get after user login)
+- Now when the rides are created an OTP is also generated using crypto module
+- npm i crypto
+- add the below code in ride.service.js
+```js
+import { Ride } from "../models/ride.model.js"
+import { getDistance_Time } from "./maps.service.js"
+import crypto from 'crypto'
+
+
+async function getFare(pickup, destination) {
+    if (!pickup || !destination) {
+        throw new Error('Pickup and destination are required')
+    }
+
+    const distanceTime = await getDistance_Time(pickup, destination);
+
+    const baseFare = {
+        auto: 30,
+        car: 50,
+        moto: 20
+    };
+
+    const perKmRate = {
+        auto: 10,
+        car: 15,
+        moto: 8
+    };
+
+    const perMinuteRate = {
+        auto: 2,
+        car: 3,
+        moto: 1.5
+    };
+
+    console.log(distanceTime);
+
+    const fare = {
+        auto: baseFare.auto + ((distanceTime.distance.value / 1000) * perKmRate.auto) + ((distanceTime.duration.value/60) * perMinuteRate.auto),
+        car: baseFare.car + ((distanceTime.distance.value / 1000) * perKmRate.car) + (d(distanceTime.duration.value/60) * perMinuteRate.car),
+        moto: baseFare.moto + ((distanceTime.distance.value / 1000) * perKmRate.moto) + ((distanceTime.duration.value/60) * perMinuteRate.moto),
+    };
+
+    return fare;
+}
+
+function getOtp(num) {
+    function generateOtp(num) {
+        const otp = crypto.randomInt(Math.pow(10, mun - 1), Math.pow(10, num)).toString();
+        return otp;
+    }
+    return generateOtp(num);
+}
+
+export const create_Ride = async ({
+    user, pickup, destination, vehicleType
+}) => {
+    if (!user || !pickup || !destination || !vehicleType) {
+        throw new Error('All fields are required')
+    }
+
+    const fare = await getFare(pickup, destination);
+
+    console.log(fare);
+
+    const ride = Ride.create({
+        user,
+        pickup,
+        destination,
+        otp: getOtp(6),
+        fare: fare[ vehicleType ]
+    })
+
+    return ride
+}
+
+```
+- add the below code in ride.model.js
+```js
+import mongoose from "mongoose";
+
+const rideSchema = new mongoose.Schema({
+    user: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'User',
+        required: true
+    },
+    captain: {
+        type: mongoose.Schema.Types.ObjectId,
+        ref: 'Captain'
+    },
+    pickup: {
+        type: String,
+        required: true
+    },
+    destination: {
+        type: String,
+        required: true
+    },
+    fare: {
+        type: Number,
+        required: true
+    },
+    status: {
+        type: String,
+        enum: ['pending', 'accepted', 'ongoing', 'completed', 'cancelled'],
+        default: 'pending'
+    },
+    duration: {
+        type: Number // in seconds
+    },
+    distance: {
+        type: Number // in metres
+    },
+    paymentId: {
+        type: String
+    },
+    orderId: {
+        type: String
+    },
+    signature: {
+        type: String
+    },
+    otp: {
+        type: String,
+        select: false,
+        required: true
+    }
+})
+
+export const Ride = mongoose.model("Ride", rideSchema)
+```
+- this otp will only go to the user
+- check again rides/create in postman see if we get otp with the ride info response 
+
+## Integrate frontend and backend and complete the Uber clone
+- add the below code in Frontend/src/pages/Home.jsx
+```jsx
+import React, { useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+import VehiclePanel from '../components/VehiclePanel'
+import ConfirmRide from '../components/ConfirmRide'
+import LookingForDriver from '../components/LookingForDriver'
+import WaitingForDriver from '../components/WaitingForDriver'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+  const vehiclePanelRef = useRef(null)
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false)
+  const confirmRidePanelRef = useRef(null)
+  const [confirmRidePanel, setConfirmRidePanel] = useState(false)
+  const vehicleFoundRef = useRef(null)
+  const [vehicleFound, setVehicleFound] = useState(false)
+  const waitingForDriverRef = useRef(null)
+  const [waitingForDriver, setWaitingForDriver] = useState(false)
+  const [pickupSuggestions, setPickupSuggestions] = useState([])
+  const [destinationSuggestions, setDestinationSuggestions] = useState([])
+  const [activeField, setActiveField] = useState(null)
+
+  const handlePickUpChange = async (e) => {
+    setPickup(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setPickupSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const handleDestinationChange = async (e) => {
+    setDestination(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setDestinationSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  useGSAP(function() {
+    if (vehiclePanelOpen) {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehiclePanelOpen])
+
+  useGSAP(function() {
+    if (confirmRidePanel) {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePanel])
+
+  useGSAP(function() {
+    if (vehicleFound) {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehicleFound])
+
+  useGSAP(function() {
+    if (waitingForDriver) {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [waitingForDriver])
+
+  const findTrip = () => {
+    setVehiclePanelOpen(true)
+    setPanelOpen(false)
+  }
+
+  return (
+    <div className='h-screen relative overflow-hidden'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('pickup')
+              }}
+              value={pickup}
+              onChange={(e) => {
+                handlePickUpChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('destination')
+              }}
+              value={destination}
+              onChange={(e) => {
+                handleDestinationChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+          <button 
+            onClick={findTrip}
+            className='bg-black text-white px-4 py-2 rounded-lg mt-3 w-full'>
+            Find Trip
+          </button>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+          <LocationSearchPanel 
+            suggestions={activeField === 'pickup' ? pickupSuggestions: destinationSuggestions}
+            setPanelOpen={setPanelOpen} 
+            setVehiclePanelOpen={setVehiclePanelOpen} 
+            setPickup={setPickup}
+            setDestination={setDestination}
+            activeField={activeField}
+          />
+        </div>
+      </div>
+
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full'>
+        <VehiclePanel setConfirmRidePanel={setConfirmRidePanel} setVehiclePanelOpen={setVehiclePanelOpen}/>
+      </div>
+
+      {/* Confirmed Ride */}
+      <div ref={confirmRidePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <ConfirmRide setConfirmRidePanel={setConfirmRidePanel} setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Looking for nearby drivers, vehicle found */}
+      <div ref={vehicleFoundRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <LookingForDriver setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Waiting for the driver*/}
+      <div ref={waitingForDriverRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl'>
+        <WaitingForDriver setWaitingForDriver={setWaitingForDriver}/>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+- add the below code in components/LoacationSearchPanel.jsx
+```jsx
+import React from 'react'
+
+const LocationSearchPanel =  ({ suggestions, setVehiclePanel, setPanelOpen, setPickup, setDestination, activeField, props}) => {    
+    
+    const handleSuggestionClick = (suggestion) => {
+        if (activeField === 'pickup') {
+            setPickup(suggestion)
+        } else if (activeField === 'destination') {
+            setDestination(suggestion)
+        }
+    }
+    // sample array of location
+    const locations = [
+        'Chhattarpur Mandir, Chhattarpur, New Delhi',
+        'DAV, R.K. Puram, New Delhi',
+        '7A, Singhania Hotel, Hauz Khas, New Delhi ',
+        'Gungnam, Majnu ka tilla, New Delhi'
+    ]
+  return (
+    <div>
+        {/* this is just a sample data Temporary*/}
+        {
+          locations.map(function(elem, idx) {
+              return <div key={idx} onClick={() => {
+                  // props.setVehiclePanelOpen(true)
+                  // props.setPanelOpen(false)
+              }} className='flex gap-4 border-2 p-3 rounded-xl items-center my-2 justify-start border-gray-100 active:border-black '>
+                          <h2 className='bg-[#eee] h-10 w-12 flex items-center justify-center rounded-full'><i className="ri-map-pin-2-fill"></i></h2>
+                          <h4 className='font-medium'>{elem}</h4>
+              </div>
+          })
+            
+        }
+
+        {/* Display fetched suggestions */}
+        {
+          suggestions.map((elem, idx) => (
+              <div key={idx} onClick={() => handleSuggestionClick(elem)} className='flex gap-4 border-2 p-3 border-gray-50 active:border-black rounded-xl items-center my-2 justify-start'>
+                  <h2 className='bg-[#eee] h-8 flex items-center justify-center w-12 rounded-full'><i className="ri-map-pin-fill"></i></h2>
+                  <h4 className='font-medium'>{elem}</h4>
+              </div>
+          ))
+        }
+        
+    </div>
+  )
+}
+
+export default LocationSearchPanel
+```
+- create get_fare function controllers/ride.controller.js
+```js
+import { validationResult } from "express-validator"
+import { create_Ride, get_Fare } from "../services/ride.service.js";
+
+export const createRide = async (req, res ) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { pickup, destination, vehicleType } = req.body;
+
+    try {
+        const ride = await create_Ride({ user: req.user._id, pickup, destination, vehicleType});
+        return res.status(201).json(ride);
+    }
+    catch( err ) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+
+export const getFare = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+    const { pickup, destination} = req.query;
+
+    try {
+        const fare = await get_Fare(pickup, destination);
+        return res.status(200).json(fare);
+    }
+    catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+``` 
+8:35:03
+- create a route in Backend/routes/ride.route.js for fare calculation to show in VehiclePanel.jsx
+```js
+import { Router } from "express";
+import { body, query } from 'express-validator'
+import { createRide, getFare } from "../controllers/ride.controller.js";
+import { authUser } from "../middleware/auth.middleware.js";
+
+const router = Router()
+
+router.post('/create', 
+    authUser,
+    body('pickup').isString().isLength({ min: 3 }).withMessage('Invalid pickup address'),
+    body('destination').isString().isLength({ min: 3 }).withMessage('Invalid destination address'),
+    body('vehicleType').isString().isIn([ 'auto', 'car', 'moto']).withMessage('Invalid vehicleType'),
+    createRide
+)
+
+router.get('/get-fare', 
+    authUser,
+    query('pickup').isString().isLength({ min: 3 }).withMessage('Invalid pickup address'),
+    query('destination').isString().isLength({ min: 3 }).withMessage('Invalid destination address'),
+    getFare
+)
+
+export default router
+```
+- update the fare by rounding it up in Backend/routes/ride.service.js
+```js
+import { Ride } from "../models/ride.model.js"
+import { getDistance_Time } from "./maps.service.js"
+import crypto from 'crypto'
+
+
+export async function get_Fare(pickup, destination) {
+    if (!pickup || !destination) {
+        throw new Error('Pickup and destination are required')
+    }
+
+    const distanceTime = await getDistance_Time(pickup, destination);
+
+    const baseFare = {
+        auto: 30,
+        car: 50,
+        moto: 20
+    };
+
+    const perKmRate = {
+        auto: 10,
+        car: 15,
+        moto: 8
+    };
+
+    const perMinuteRate = {
+        auto: 2,
+        car: 3,
+        moto: 1.5
+    };
+
+    console.log(distanceTime);
+
+    const fare = {
+        auto: Math.round(baseFare.auto + ((distanceTime.distance.value / 1000) * perKmRate.auto) + ((distanceTime.duration.value/60) * perMinuteRate.auto)),
+        car: Math.round(baseFare.car + ((distanceTime.distance.value / 1000) * perKmRate.car) + (d(distanceTime.duration.value/60) * perMinuteRate.car)),
+        moto: Math.round(baseFare.moto + ((distanceTime.distance.value / 1000) * perKmRate.moto) + ((distanceTime.duration.value/60) * perMinuteRate.moto)),
+    };
+
+    return fare;
+}
+
+function getOtp(num) {
+    function generateOtp(num) {
+        const otp = crypto.randomInt(Math.pow(10, mun - 1), Math.pow(10, num)).toString();
+        return otp;
+    }
+    return generateOtp(num);
+}
+
+export const create_Ride = async ({
+    user, pickup, destination, vehicleType
+}) => {
+    if (!user || !pickup || !destination || !vehicleType) {
+        throw new Error('All fields are required')
+    }
+
+    const fare = await getFare(pickup, destination);
+
+    console.log(fare);
+
+    const ride = Ride.create({
+        user,
+        pickup,
+        destination,
+        otp: getOtp(6),
+        fare: fare[ vehicleType ]
+    })
+
+    return ride
+}
+
+```
+- update the file Frontend/src/pages/Home.jsx for /rides/get-fare and vehicleType using createRide fn in /rides/create route 
+```jsx
+import React, { useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+import VehiclePanel from '../components/VehiclePanel'
+import ConfirmRide from '../components/ConfirmRide'
+import LookingForDriver from '../components/LookingForDriver'
+import WaitingForDriver from '../components/WaitingForDriver'
+import axios from 'axios'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+  const vehiclePanelRef = useRef(null)
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false)
+  const confirmRidePanelRef = useRef(null)
+  const [confirmRidePanel, setConfirmRidePanel] = useState(false)
+  const vehicleFoundRef = useRef(null)
+  const [vehicleFound, setVehicleFound] = useState(false)
+  const waitingForDriverRef = useRef(null)
+  const [waitingForDriver, setWaitingForDriver] = useState(false)
+  const [pickupSuggestions, setPickupSuggestions] = useState([])
+  const [destinationSuggestions, setDestinationSuggestions] = useState([])
+  const [activeField, setActiveField] = useState(null)
+  const [fare, setFare] = useState({})
+  const [vehicleType, setVehicleType] = useState(null)
+
+  const handlePickUpChange = async (e) => {
+    setPickup(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setPickupSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const handleDestinationChange = async (e) => {
+    setDestination(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setDestinationSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  useGSAP(function() {
+    if (vehiclePanelOpen) {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehiclePanelOpen])
+
+  useGSAP(function() {
+    if (confirmRidePanel) {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePanel])
+
+  useGSAP(function() {
+    if (vehicleFound) {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehicleFound])
+
+  useGSAP(function() {
+    if (waitingForDriver) {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [waitingForDriver])
+
+  async function findTrip() {
+    setVehiclePanelOpen(true)
+    setPanelOpen(false)
+
+    const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/rides/get-fare`, {
+      params: { pickup, destination },
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    setFare(response.data)
+  }
+
+  async function createRide() {
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/rides/create`, {
+      pickup,
+      destination,
+      vehicleType
+    }, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    console.log(response.data)
+  }
+
+  return (
+    <div className='h-screen relative overflow-hidden'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('pickup')
+              }}
+              value={pickup}
+              onChange={(e) => {
+                handlePickUpChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('destination')
+              }}
+              value={destination}
+              onChange={(e) => {
+                handleDestinationChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+          <button 
+            onClick={findTrip}
+            className='bg-black text-white px-4 py-2 rounded-lg mt-3 w-full'>
+            Find Trip
+          </button>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+          <LocationSearchPanel 
+            suggestions={activeField === 'pickup' ? pickupSuggestions: destinationSuggestions}
+            setPanelOpen={setPanelOpen} 
+            setVehiclePanelOpen={setVehiclePanelOpen} 
+            setPickup={setPickup}
+            setDestination={setDestination}
+            activeField={activeField}
+          />
+        </div>
+      </div>
+
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full'>
+        <VehiclePanel 
+          selectVehicle={setVehicleType}
+          fare={fare} setConfirmRidePanel={setConfirmRidePanel} setVehiclePanelOpen={setVehiclePanelOpen}/>
+      </div>
+
+      {/* Confirmed Ride */}
+      <div ref={confirmRidePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <ConfirmRide 
+          createRide={createRide}
+          setConfirmRidePanel={setConfirmRidePanel} setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Looking for nearby drivers, vehicle found */}
+      <div ref={vehicleFoundRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <LookingForDriver setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Waiting for the driver*/}
+      <div ref={waitingForDriverRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl'>
+        <WaitingForDriver setWaitingForDriver={setWaitingForDriver}/>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+- add the below code in src/components/VehiclePanel.jsx to set the fare of the ride and set vehicleType for selectVehicle fn
+```jsx
+import React from 'react'
+
+function VehiclePanel(props) {
+  return (
+    <div>
+        <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+          props.setVehiclePanelOpen(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Choose a Vehicle</h3>
+        
+        <div onClick={() => {
+            props.setConfirmRidePanel(true)
+            props.setVehiclePanelOpen(false)
+            props.selectVehicle('car')
+        }} className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+          <img className='h-13' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+          <div className='ml-2 w-1/2'>
+            <h4 className='font-medium text-lg'>UberGo <span><i className="ri-user-3-fill"></i><sub>4</sub></span></h4>
+            <h5 className='font-medium text-sm'>2 mins away</h5>
+            <p className=' text-xs text-gray-600'>Affordable, compact rides</p>
+          </div>
+          <h2 className='text-lg font-semibold'>₹{props.fare.car}</h2>
+        </div>
+        <div onClick={() => {
+            props.setConfirmRidePanel(true)
+            props.setVehiclePanelOpen(false)
+            props.selectVehicle('moto')
+        }} className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+          <img className='h-13' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_368,w_552/v1649231091/assets/2c/7fa194-c954-49b2-9c6d-a3b8601370f5/original/Uber_Moto_Orange_312x208_pixels_Mobile.png" alt="" />
+          <div className=' w-1/2'>
+            <h4 className='font-medium text-lg'>Moto <span><i className="ri-user-3-fill"></i><sub>1</sub></span></h4>
+            <h5 className='font-medium text-sm'>3 mins away</h5>
+            <p className=' text-xs text-gray-600'>Affordable motorcycle rides</p>
+          </div>
+          <h2 className='text-lg font-semibold'>₹{props.fare.moto}</h2>
+        </div>
+        <div onClick={() => {
+            props.setConfirmRidePanel(true)
+            props.setVehiclePanelOpen(false)
+            props.selectVehicle('auto')
+        }} className='flex active:border-2 border-black rounded-xl mb-2 w-full p-3 items-center justify-between '>
+          <img className='h-15' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_368,w_552/v1648431773/assets/1d/db8c56-0204-4ce4-81ce-56a11a07fe98/original/Uber_Auto_558x372_pixels_Desktop.png" alt="" />
+          <div className='ml-2 w-1/2'>
+            <h4 className='font-medium text-lg'>UberAuto <span><i className="ri-user-3-fill"></i><sub>3</sub></span></h4>
+            <h5 className='font-medium text-sm'>2 mins away</h5>
+            <p className=' text-xs text-gray-600'>Affordable auto rides</p>
+          </div>
+          <h2 className='text-lg font-semibold'>₹{props.fare.auto}</h2>
+        </div>
+    </div>
+  )
+}
+
+export default VehiclePanel
+```
+
+- add the below code in ConfirmRide.jsx for adding the current pickup and destination address in the confirmRide page
+```jsx
+import React from 'react'
+
+function ConfirmRide(props) {
+  return (
+    <div>
+      <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+          props.setConfirmRidePanel(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Confirm your ride</h3>
+
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <img className='h-20' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.pickup}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.destination}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹{props.fare[props.vehicleType]}</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash Cash</p>
+              </div>
+            </div>
+          </div>
+          <button onClick={() => {
+            props.setVehicleFound(true)
+            props.setConfirmRidePanel(false)
+            props.createRide()
+          }} className='w-full mt-5 bg-green-600 text-white font-semibold p-2 rounded-lg'>Confirm</button>
+        </div>
+    </div>
+  )
+}
+
+export default ConfirmRide
+```
+- add the below code in components/LookingForDriver.jsx for adding the current data of addresses and price in Looking for driver page
+```jsx
+import React from 'react'
+
+function LookingForDriver(props) {
+  return (
+    <div>
+      <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+          props.setVehicleFound(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Looking for nearby drivers</h3>
+
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <img className='h-20' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.pickup}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.destination}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹{props.fare[props.vehicleType]}</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash cash</p>
+              </div>
+            </div>
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default LookingForDriver
+```
+- add the below code in pages/Home.jsx
+```jsx
+import React, { useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+import VehiclePanel from '../components/VehiclePanel'
+import ConfirmRide from '../components/ConfirmRide'
+import LookingForDriver from '../components/LookingForDriver'
+import WaitingForDriver from '../components/WaitingForDriver'
+import axios from 'axios'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+  const vehiclePanelRef = useRef(null)
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false)
+  const confirmRidePanelRef = useRef(null)
+  const [confirmRidePanel, setConfirmRidePanel] = useState(false)
+  const vehicleFoundRef = useRef(null)
+  const [vehicleFound, setVehicleFound] = useState(false)
+  const waitingForDriverRef = useRef(null)
+  const [waitingForDriver, setWaitingForDriver] = useState(false)
+  const [pickupSuggestions, setPickupSuggestions] = useState([])
+  const [destinationSuggestions, setDestinationSuggestions] = useState([])
+  const [activeField, setActiveField] = useState(null)
+  const [fare, setFare] = useState({})
+  const [vehicleType, setVehicleType] = useState(null)
+
+  const handlePickUpChange = async (e) => {
+    setPickup(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setPickupSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const handleDestinationChange = async (e) => {
+    setDestination(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setDestinationSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  useGSAP(function() {
+    if (vehiclePanelOpen) {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehiclePanelOpen])
+
+  useGSAP(function() {
+    if (confirmRidePanel) {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePanel])
+
+  useGSAP(function() {
+    if (vehicleFound) {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehicleFound])
+
+  useGSAP(function() {
+    if (waitingForDriver) {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [waitingForDriver])
+
+  async function findTrip() {
+    setVehiclePanelOpen(true)
+    setPanelOpen(false)
+
+    const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/rides/get-fare`, {
+      params: { pickup, destination },
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    setFare(response.data)
+  }
+
+  async function createRide() {
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/rides/create`, {
+      pickup,
+      destination,
+      vehicleType
+    }, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    console.log(response.data)
+  }
+
+  return (
+    <div className='h-screen relative overflow-hidden'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('pickup')
+              }}
+              value={pickup}
+              onChange={(e) => {
+                handlePickUpChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('destination')
+              }}
+              value={destination}
+              onChange={(e) => {
+                handleDestinationChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+          <button 
+            onClick={findTrip}
+            className='bg-black text-white px-4 py-2 rounded-lg mt-3 w-full'>
+            Find Trip
+          </button>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+          <LocationSearchPanel 
+            suggestions={activeField === 'pickup' ? pickupSuggestions: destinationSuggestions}
+            setPanelOpen={setPanelOpen} 
+            setVehiclePanelOpen={setVehiclePanelOpen} 
+            setPickup={setPickup}
+            setDestination={setDestination}
+            activeField={activeField}
+          />
+        </div>
+      </div>
+
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full'>
+        <VehiclePanel 
+          selectVehicle={setVehicleType}
+          fare={fare} setConfirmRidePanel={setConfirmRidePanel} setVehiclePanelOpen={setVehiclePanelOpen}/>
+      </div>
+
+      {/* Confirmed Ride */}
+      <div ref={confirmRidePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <ConfirmRide 
+          createRide={createRide}
+          pickup={pickup}
+          destination={destination}
+          fare={fare}
+          vehicleType={vehicleType}
+          setConfirmRidePanel={setConfirmRidePanel} setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Looking for nearby drivers, vehicle found */}
+      <div ref={vehicleFoundRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <LookingForDriver 
+          createRide={createRide}
+          pickup={pickup}
+          destination={destination}
+          fare={fare}
+          vehicleType={vehicleType}
+          setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Waiting for the driver*/}
+      <div ref={waitingForDriverRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl'>
+        <WaitingForDriver setWaitingForDriver={setWaitingForDriver}/>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+
+## UI integration of rides on the captain side
+- add the below code in Frontend/src/components/CaptainDetails.jsx
+```jsx
+import React, { useContext } from 'react'
+import { CaptainDataContext } from '../context/CaptainContext.jsx'
+
+function CaptainDetails() {
+
+  const { captain } = useContext(CaptainDataContext)
+
+  return (
+    <div>
+        <div className='flex items-center justify-between'>
+              <div className='flex items-center justify-start gap-3'>
+                <img className='h-10 w-10 rounded-full object-cover' src="https://encrypted-tbn0.gstatic.com/images?q=tbn:ANd9GcSlv0zjWmdsmjxIL4cE-qpaLi-6F89HJ_JiKw&s" alt="" />
+                <h4 className='text-lg font-medium capitalize'>{captain.fullname.firstname + " " + captain.fullname.lastname}</h4>
+              </div>
+              <div className='text-right'>
+                <h3 className='text-lg font-semibold'>₹298.57</h3>
+                <p className='text-sm text-gray-600 left-0'>Earned</p>
+              </div>
+            </div>
+            <div className='flex p-4 mt-3 bg-gray-100 rounded-xl justify-center gap-5 items-start'>
+              <div className='text-center'>
+                <i className="font-thin mb-2 text-gray-400 text-3xl ri-time-line"></i>
+                <h5 className='text-lg font-medium mb-2 mt-2'>10.2</h5>
+                <p className='text-xs text-gray-400 uppercase'>Hours online</p>
+              </div>
+              <div className='text-center'>
+                <i className="font-thin mb-2 text-gray-400 text-3xl ri-speed-up-line"></i>
+                <h5 className='text-lg font-medium mb-2 mt-2'>30 KM</h5>
+                <p className='text-xs text-gray-400 uppercase'>Total distance</p>
+              </div>
+              <div className='text-center'>
+                <i className="font-thin mb-2 text-gray-400 text-3xl ri-booklet-line"></i>
+                <h5 className='text-lg font-medium mb-2 mt-2'>24</h5>
+                <p className='text-xs text-gray-400 uppercase'>Total jobs</p>
+              </div>
+            </div>
+    </div>
+  )
+}
+
+export default CaptainDetails
+```
+- Now we will use socketIO to send the request of the user for the Driver when the user confirms the ride and Looking for driver panel opens
+- Set up the socketIo in our server(Backend) now write the below command in integrated terminal of Backend
+- npm i socket.io
+- create a new file Backend/socket.js and add the below code
+```js
+import { Server } from 'socket.io';
+import { User } from './models/user.model.js';
+import { Captain } from './models/captain.model.js';
+
+let io;
+
+function initializeSocket(server) {
+    io = new Server(server, {
+        cors: {
+            origin: '*',
+            methods: ['GET', 'POST']
+        }
+    });
+
+    io.on('connection', (socket) => {
+        console.log(`Client connected: ${socket.id}`);
+        
+        socket.on('join', async (data) => {
+            const {userId, userType } = data;
+
+            if (userType === 'user') {
+                await User.findByIdAndUpdate(userId, {socketId: socket.id });
+            }
+            else if (userType === 'captain') {
+                await Captain.findByIdAndUpdate(userId, { socketId: socket.id });
+            }
+        });
+
+        socket.on('update-location-captain', async (data) => {
+            const { userId, location } = data;
+
+            if (!location || !location.ltd || !location.lng ) {
+                return socket.emit('error', { message: 'Invalid location data' });
+            }
+
+            await Captain.findByIdAndUpdate(userId, {
+                location: {
+                    ltd: location.ltd,
+                    lng: location.lng
+                }
+            });
+        });
+
+        socket.on('disconnect', () => {
+            console.log(`Client disconnected: ${socket.id}`);
+        })
+    })
+}
+
+const sendMessageToSocketId = (socketId, messageObject) => {
+
+    console.log(messageObject);
+    
+        if (io) {
+            io.to(socketId).emit(messageObject.event, messageObject.data);
+        } else {
+            console.log('Socket.io not initialized.');
+        }
+    }
+
+export {
+    initializeSocket,
+    sendMessageToSocketId
+}
+```
+- add the below code in Backend/server.js
+```js
+import dotenv from "dotenv"
+dotenv.config({ path: './.env'})
+import connectDB from './db/db.js'
+import {app} from './app.js'
+import { initializeSocket } from "./socket.js"
+import { createServer } from "http";
+
+const server = createServer(app)
+
+const port = process.env.PORT || 3000
+
+connectDB();
+
+initializeSocket(server)
+
+server.on("error", (error) => {
+    console.log("ERRR:", error);
+    throw error
+})
+server.listen(port, () => {
+    console.log(`Server is running at port : ${port}`)
+})
+```
+- check it on postman (9:05:04 https://www.youtube.com/watch?v=4qyBjxPlEZo)
+- new tab of Socket.IO type add "http://locahost:4000", then click connect , the connection should work properly
+- then on the terminal of server(backend) it should show
+```text
+Server is running at port : 4000
+Connected to DB
+Client connected: VevxBmZFL3_iai14AAAB
+```
+- Client connectedL <itsurl-socketID>
+- we need to connect our user and captain to socketIo's server
+- so we store the socketid of each user or captain in the database in the code of socket.js is already in it
+- Integrate socket.io in the Frontend as well
+- write the below command in the integrated terminal of Frontend
+- npm i socket.io-client
+- make a context of socketio and when we need connection then we'll use it to coonect to socketio many times over
+- 2 fns to send and recieve messages
+- create a file in Frontend/src/context/SocketContext.jsx 
+```jsx
+import React, { createContext, useEffect } from 'react';
+import { io } from 'socket.io-client';
+
+export const SocketContext = createContext();
+
+const socket = io(`${import.meta.env.VITE_BASE_URL}`); // Replace with your server URL
+
+const SocketProvider = ({ children }) => {
+    useEffect(() => {
+        // Basic connection logic
+        socket.on('connect', () => {
+            console.log('Connected to server');
+        });
+
+        socket.on('disconnect', () => {
+            console.log('Disconnected from server');
+        });
+
+    }, []);
+
+
+
+    return (
+        <SocketContext.Provider value={{ socket }}>
+            {children}
+        </SocketContext.Provider>
+    );
+};
+
+export default SocketProvider;
+```
+- BUG FIX below: Couldn't able to connect to the server for the love of GOD!!!! BRUH wasted so much time just to do this and get it done (IMPORTANT)
+- add below code in Frontend/src/main.jsx
+```jsx
+import { StrictMode } from 'react'
+import { createRoot } from 'react-dom/client'
+import './index.css'
+import App from './App.jsx'
+import {BrowserRouter} from 'react-router-dom'
+import UserContext from './context/UserContext.jsx'
+import CaptainContext from './context/CaptainContext.jsx'
+import SocketProvider from './context/SocketContext.jsx'
+
+createRoot(document.getElementById('root')).render(
+  <StrictMode>
+    <CaptainContext>
+      <UserContext>
+        <SocketProvider>
+          <BrowserRouter>
+            <App />
+          </BrowserRouter>
+        </SocketProvider>
+      </UserContext>
+    </CaptainContext>
+  </StrictMode>,
+)
+
+```
+- check socketio connection in postman at http://localhost:4000 connect and then send 'join'
+- add the below code in pages/Home.jsx
+```jsx
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+import VehiclePanel from '../components/VehiclePanel'
+import ConfirmRide from '../components/ConfirmRide'
+import LookingForDriver from '../components/LookingForDriver'
+import WaitingForDriver from '../components/WaitingForDriver'
+import axios from 'axios'
+import { SocketContext } from '../context/SocketContext.jsx'
+import { UserDataContext } from '../context/UserContext.jsx'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+  const vehiclePanelRef = useRef(null)
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false)
+  const confirmRidePanelRef = useRef(null)
+  const [confirmRidePanel, setConfirmRidePanel] = useState(false)
+  const vehicleFoundRef = useRef(null)
+  const [vehicleFound, setVehicleFound] = useState(false)
+  const waitingForDriverRef = useRef(null)
+  const [waitingForDriver, setWaitingForDriver] = useState(false)
+  const [pickupSuggestions, setPickupSuggestions] = useState([])
+  const [destinationSuggestions, setDestinationSuggestions] = useState([])
+  const [activeField, setActiveField] = useState(null)
+  const [fare, setFare] = useState({})
+  const [vehicleType, setVehicleType] = useState(null)
+
+  const { socket } = useContext(SocketContext);
+  const { user } = useContext(UserDataContext)
+
+  useEffect(() => {
+    socket.emit("join", { userType: "user", userId: user._id } )
+  }, [ user ])
+  
+
+  const handlePickUpChange = async (e) => {
+    setPickup(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setPickupSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const handleDestinationChange = async (e) => {
+    setDestination(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setDestinationSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  useGSAP(function() {
+    if (vehiclePanelOpen) {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehiclePanelOpen])
+
+  useGSAP(function() {
+    if (confirmRidePanel) {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePanel])
+
+  useGSAP(function() {
+    if (vehicleFound) {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehicleFound])
+
+  useGSAP(function() {
+    if (waitingForDriver) {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [waitingForDriver])
+
+  async function findTrip() {
+    setVehiclePanelOpen(true)
+    setPanelOpen(false)
+
+    const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/rides/get-fare`, {
+      params: { pickup, destination },
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    setFare(response.data)
+  }
+
+  async function createRide() {
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/rides/create`, {
+      pickup,
+      destination,
+      vehicleType
+    }, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    console.log(response.data)
+  }
+
+  return (
+    <div className='h-screen relative overflow-hidden'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('pickup')
+              }}
+              value={pickup}
+              onChange={(e) => {
+                handlePickUpChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('destination')
+              }}
+              value={destination}
+              onChange={(e) => {
+                handleDestinationChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+          <button 
+            onClick={findTrip}
+            className='bg-black text-white px-4 py-2 rounded-lg mt-3 w-full'>
+            Find Trip
+          </button>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+          <LocationSearchPanel 
+            suggestions={activeField === 'pickup' ? pickupSuggestions: destinationSuggestions}
+            setPanelOpen={setPanelOpen} 
+            setVehiclePanelOpen={setVehiclePanelOpen} 
+            setPickup={setPickup}
+            setDestination={setDestination}
+            activeField={activeField}
+          />
+        </div>
+      </div>
+
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full'>
+        <VehiclePanel 
+          selectVehicle={setVehicleType}
+          fare={fare} setConfirmRidePanel={setConfirmRidePanel} setVehiclePanelOpen={setVehiclePanelOpen}/>
+      </div>
+
+      {/* Confirmed Ride */}
+      <div ref={confirmRidePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <ConfirmRide 
+          createRide={createRide}
+          pickup={pickup}
+          destination={destination}
+          fare={fare}
+          vehicleType={vehicleType}
+          setConfirmRidePanel={setConfirmRidePanel} setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Looking for nearby drivers, vehicle found */}
+      <div ref={vehicleFoundRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <LookingForDriver 
+          createRide={createRide}
+          pickup={pickup}
+          destination={destination}
+          fare={fare}
+          vehicleType={vehicleType}
+          setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Waiting for the driver*/}
+      <div ref={waitingForDriverRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl'>
+        <WaitingForDriver setWaitingForDriver={setWaitingForDriver}/>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+- add the below code in pages/CaptainHome.jsx
+```jsx
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import CaptainDetails from '../components/CaptainDetails'
+import RidePopUp from '../components/RidePopUp'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import ConfirmRidePopUp from '../components/ConfirmRidePopUp'
+import { SocketContext } from '../context/SocketContext'
+import { CaptainDataContext } from '../context/CaptainContext'
+
+function CaptainHome() {
+
+  const [ridePopUpPanel, setRidePopUpPanel] = useState(true)
+  const ridePopUpPanelRef = useRef(null)
+  const [confirmRidePopUpPanel, setConfirmRidePopUpPanel] = useState(false)
+  const confirmRidePopUpPanelRef = useRef(null)
+
+  const { socket } = useContext(SocketContext)
+  const { captain } = useContext(CaptainDataContext)
+
+  useEffect(() => {
+    socket.emit('join', {
+      userId: captain._id,
+      userType: 'captain'
+    })
+  })
+
+  useGSAP(function() {
+    if (ridePopUpPanel) {
+      gsap.to(ridePopUpPanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(ridePopUpPanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [ridePopUpPanel])
+
+  useGSAP(function() {
+    if (confirmRidePopUpPanel) {
+      gsap.to(confirmRidePopUpPanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePopUpPanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePopUpPanel])
+
+  return (
+    <div className='h-screen'>
+        <div className='fixed p-3 top-0 flex items-center justify-between w-full'>
+          <img className='w-16' src="../src/assets/uber-driver.svg" alt="" />
+          <Link to='/captains/logout' className='h-10 w-10 bg-white flex items-center justify-center rounded-full'>
+              <i className="text-lg font-medium ri-logout-box-r-line"></i>
+          </Link>
+        </div>
+        <div className='h-2/3'>
+            <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+
+        </div>
+        <div className='h-1/3 p-4 rounded-t-xl'>
+            <CaptainDetails />
+        </div>
+        <div ref={ridePopUpPanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <RidePopUp setRidePopUpPanel={setRidePopUpPanel} setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} />
+        </div>
+        <div ref={confirmRidePopUpPanelRef} className='fixed h-screen w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <ConfirmRidePopUp setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} setRidePopUpPanel={setRidePopUpPanel} />
+        </div>
+    </div>
+  )
+}
+
+export default CaptainHome
+```
+- when the ride is created then there should be a notification on captain's side
+- send notification to all the drivers near pickup location
+- add the below code in Backend/services/maps.service.js
+```js
+import axios from 'axios'
+import { Captain } from '../models/captain.model.js'
+
+export const getAddressCoordinate = async (address) => {
+    const apiKey = process.env.GOOGLE_MAPS_API;
+    const url = `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(address)}&key=${apiKey}`;
+
+    try {
+        constresponse = await axios.get(url);
+        if (response.data.status === 'OK') {
+            const location = response.data.results[0].geometry.location;
+            return {
+                ltd: location.lat,
+                lng: location.lng
+            };
+        } else {
+            throw new Error('Unable to fetch coordinates');
+        }
+    } catch (error) {
+        console.error(error);
+        throw error;
+    }
+
+
+}
+
+export const getDistance_Time = async (origin, destination) => {
+    if (!origin || !destination) {
+        throw new Error('Origin and destination are required')
+    }
+
+    const apiKey = process.env.GOOGLE_MAPS_API;
+
+    const url = `https://maps.googleapis.com/maps/api/distancematrix/json?origins=${encodeURIComponent(origin)}&destinations=${encodeURIComponent(destination)}&key=${apiKey}`
+
+    try {
+
+        const response = await axios.get(url);
+        if (response.data.status === 'OK') {
+
+            if (response.data.rows[ 0 ].elements[ 0 ].status === 'ZERO_RESULTS') {
+                throw new Error('No routes found');
+            }
+
+            return response.data.rows[ 0 ].elements[ 0 ];
+        }
+        else {
+            throw new Error('Unable to fetch distance and time');
+        }
+    }
+    catch (err) {
+        console.error(err);
+        throw err;
+    }
+}
+
+export const getSuggestions = async (input) => {
+    if (!input) {
+        throw new Error('query is required')
+    }
+
+    const apiKey = process.env.GOOGLE_MAPS_API;
+
+    const url = `https://maps.googleapis.com/maps/api/place/autocomplete/json?input=${encodeURIComponent(input)}&key=${apiKey}`
+
+    try {
+        const response = await axios.get(url);
+        if (response.data.status === 'OK') {
+            return response.data.predictions.map(prediction => prediction.description).filter(value => value);
+        } else {
+            throw new Error('Unable to fetch suggestions');
+        }
+    } catch (err) {
+        console.error(err);
+        throw err;
+    }
+}
+
+export const getCaptainInTheRadius = async (ltd, lng, radius) => {
+    //radius in km
+
+    const captains = await Captain.find({
+        location: {
+            $geoWithin: {
+                $centerSphere: [ [ ltd, lng ], radius / 6378 ]
+            }
+        }
+    })
+    return captains
+}
+```
+- the emitter 'upadate-location-captain' in the Backend/socket.js should be frequently updated and to set that frequency/interval we update useEffect hook with the below code in Frontend/src/pages/CaptainHome.jsx 
+```jsx
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import CaptainDetails from '../components/CaptainDetails'
+import RidePopUp from '../components/RidePopUp'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import ConfirmRidePopUp from '../components/ConfirmRidePopUp'
+import { SocketContext } from '../context/SocketContext'
+import { CaptainDataContext } from '../context/CaptainContext'
+
+function CaptainHome() {
+
+  const [ridePopUpPanel, setRidePopUpPanel] = useState(true)
+  const ridePopUpPanelRef = useRef(null)
+  const [confirmRidePopUpPanel, setConfirmRidePopUpPanel] = useState(false)
+  const confirmRidePopUpPanelRef = useRef(null)
+
+  const { socket } = useContext(SocketContext)
+  const { captain } = useContext(CaptainDataContext)
+
+  useEffect(() => {
+    socket.emit('join', {
+      userId: captain._id,
+      userType: 'captain'
+    })
+    
+    const updateLocation = () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(position => {
+
+          console.log({userId: captain._id,
+            location: {
+              ltd: position.coords.latitude,
+              lng: position.coords.longitude
+            }})
+          socket.emit('update-location-captain', {
+            userId: captain._id,
+            location: {
+              ltd: position.coords.latitude,
+              lng: position.coords.longitude
+            }
+          })
+        })
+      }
+    }
+  
+    const locationInterval = setInterval(updateLocation, 10000)
+    updateLocation()
+    
+    // return () => clearInterval(locationInterval)
+}, [])
+
+  useGSAP(function() {
+    if (ridePopUpPanel) {
+      gsap.to(ridePopUpPanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(ridePopUpPanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [ridePopUpPanel])
+
+  useGSAP(function() {
+    if (confirmRidePopUpPanel) {
+      gsap.to(confirmRidePopUpPanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePopUpPanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePopUpPanel])
+
+  return (
+    <div className='h-screen'>
+        <div className='fixed p-3 top-0 flex items-center justify-between w-full'>
+          <img className='w-16' src="../src/assets/uber-driver.svg" alt="" />
+          <Link to='/captains/logout' className='h-10 w-10 bg-white flex items-center justify-center rounded-full'>
+              <i className="text-lg font-medium ri-logout-box-r-line"></i>
+          </Link>
+        </div>
+        <div className='h-2/3'>
+            <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+
+        </div>
+        <div className='h-1/3 p-4 rounded-t-xl'>
+            <CaptainDetails />
+        </div>
+        <div ref={ridePopUpPanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <RidePopUp setRidePopUpPanel={setRidePopUpPanel} setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} />
+        </div>
+        <div ref={confirmRidePopUpPanelRef} className='fixed h-screen w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <ConfirmRidePopUp setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} setRidePopUpPanel={setRidePopUpPanel} />
+        </div>
+    </div>
+  )
+}
+
+export default CaptainHome
+```
+- as we can't get live location from the browser on the local network so we use ports and using ports forwarding provided by VS code
+![alt text](<Screenshot 2025-03-15 225002.png>)
+- the by default location should not be accessed at local host and many browser refuses it as well, so we use port forwarding using VS code
+- IMPORTANT
+- Go to PORTS in the below console that contains terminal as well, It will ask for login use Github for it, add 5173 as a port, right click > port visiblity public, copy the link and use it on the browser as a Temporary host
+- system  location ON
+- we can see location in the console rn and in the mongodb location , this location is updating every 10 secs, done via socketio
+- add the below code in Backend/controllers/ride.controller.js to run a query in it
+```js
+import { validationResult } from "express-validator"
+import { create_Ride, get_Fare } from "../services/ride.service.js";
+import { getAddressCoordinate, getCaptainInTheRadius } from "../services/maps.service.js";
+import { sendMessageToSocketId } from "../socket.js";
+
+export const createRide = async (req, res ) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { pickup, destination, vehicleType } = req.body;
+
+    try {
+        const ride = await create_Ride({ user: req.user._id, pickup, destination, vehicleType});
+        res.status(201).json(ride);
+
+        const pickupCoordinates = await getAddressCoordinate(pickup)
+
+        console.log(pickupCoordinates)
+
+        const captainsInRadius = await getCaptainInTheRadius(pickupCoordinates.ltd, pickupCoordinates.lng, 2) //available captains in 2 km radius
+        
+        ride.otp = ""
+        
+        captainsInRadius.map(captain => {
+            sendMessageToSocketId(captain.socketId, {
+                event: 'new-ride',
+                data: ride
+            })
+        })
+    }
+    catch( err ) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+
+export const getFare = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+    const { pickup, destination} = req.query;
+
+    try {
+        const fare = await get_Fare(pickup, destination);
+        return res.status(200).json(fare);
+    }
+    catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+```
+- In the captains we got the socketId we need to send the rides' detail on that socketId, before tha we need to remove the otp that we get
+- add the below code in pages/CaptainHome.jsx to listen the evnt sent from the server which is new-ride here, changes soct.on and useEffect hook
+```jsx
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import CaptainDetails from '../components/CaptainDetails'
+import RidePopUp from '../components/RidePopUp'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import ConfirmRidePopUp from '../components/ConfirmRidePopUp'
+import { SocketContext } from '../context/SocketContext'
+import { CaptainDataContext } from '../context/CaptainContext'
+
+function CaptainHome() {
+
+  const [ridePopUpPanel, setRidePopUpPanel] = useState(true)
+  const ridePopUpPanelRef = useRef(null)
+  const [confirmRidePopUpPanel, setConfirmRidePopUpPanel] = useState(false)
+  const confirmRidePopUpPanelRef = useRef(null)
+
+  const { socket } = useContext(SocketContext)
+  const { captain } = useContext(CaptainDataContext)
+
+  useEffect(() => {
+    socket.emit('join', {
+      userId: captain._id,
+      userType: 'captain'
+    })
+    
+    const updateLocation = () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(position => {
+
+          console.log({userId: captain._id,
+            location: {
+              ltd: position.coords.latitude,
+              lng: position.coords.longitude
+            }})
+          socket.emit('update-location-captain', {
+            userId: captain._id,
+            location: {
+              ltd: position.coords.latitude,
+              lng: position.coords.longitude
+            }
+          })
+        })
+      }
+    }
+  
+    const locationInterval = setInterval(updateLocation, 10000)
+    updateLocation()
+    
+    // return () => clearInterval(locationInterval)
+}, [])
+
+  socket.on('new-ride', (data) => {
+    console.log(data)
+  })
+
+  useGSAP(function() {
+    if (ridePopUpPanel) {
+      gsap.to(ridePopUpPanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(ridePopUpPanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [ridePopUpPanel])
+
+  useGSAP(function() {
+    if (confirmRidePopUpPanel) {
+      gsap.to(confirmRidePopUpPanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePopUpPanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePopUpPanel])
+
+  return (
+    <div className='h-screen'>
+        <div className='fixed p-3 top-0 flex items-center justify-between w-full'>
+          <img className='w-16' src="../src/assets/uber-driver.svg" alt="" />
+          <Link to='/captains/logout' className='h-10 w-10 bg-white flex items-center justify-center rounded-full'>
+              <i className="text-lg font-medium ri-logout-box-r-line"></i>
+          </Link>
+        </div>
+        <div className='h-2/3'>
+            <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+
+        </div>
+        <div className='h-1/3 p-4 rounded-t-xl'>
+            <CaptainDetails />
+        </div>
+        <div ref={ridePopUpPanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <RidePopUp setRidePopUpPanel={setRidePopUpPanel} setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} />
+        </div>
+        <div ref={confirmRidePopUpPanelRef} className='fixed h-screen w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <ConfirmRidePopUp setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} setRidePopUpPanel={setRidePopUpPanel} />
+        </div>
+    </div>
+  )
+}
+
+export default CaptainHome
+```
+- request is raised now via socketio set up by which uaer and captain are connected meaning the ride request successfully go through to the captain from a user
+- we need to send the user details instead of the user's id when we request the ride
+- update and add the below code in controllers/ride.controller.js
+```js
+import { validationResult } from "express-validator"
+import { create_Ride, get_Fare } from "../services/ride.service.js";
+import { getAddressCoordinate, getCaptainInTheRadius } from "../services/maps.service.js";
+import { sendMessageToSocketId } from "../socket.js";
+import { Ride } from "../models/ride.model.js";
+
+export const createRide = async (req, res ) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { pickup, destination, vehicleType } = req.body;
+
+    try {
+        const ride = await create_Ride({ user: req.user._id, pickup, destination, vehicleType});
+        res.status(201).json(ride);
+
+        const pickupCoordinates = await getAddressCoordinate(pickup)
+
+        console.log(pickupCoordinates)
+
+        const captainsInRadius = await getCaptainInTheRadius(pickupCoordinates.ltd, pickupCoordinates.lng, 2) //available captains in 2 km radius
+        
+        ride.otp = ""
+
+        const rideWithUser = await Ride.findOne({ _id: ride._id }).populate('user');
+        
+        captainsInRadius.map(captain => {
+            sendMessageToSocketId(captain.socketId, {
+                event: 'new-ride',
+                data: rideWithUser
+            })
+        })
+    }
+    catch( err ) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+```
+- add and update the code in src/pages/CaptainHome.jsx for ride and confirmRide
+```jsx
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import CaptainDetails from '../components/CaptainDetails'
+import RidePopUp from '../components/RidePopUp'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import ConfirmRidePopUp from '../components/ConfirmRidePopUp'
+import { SocketContext } from '../context/SocketContext'
+import { CaptainDataContext } from '../context/CaptainContext'
+import axios from "axios"
+
+function CaptainHome() {
+
+  const [ridePopUpPanel, setRidePopUpPanel] = useState(false)
+  const ridePopUpPanelRef = useRef(null)
+  const [confirmRidePopUpPanel, setConfirmRidePopUpPanel] = useState(false)
+  const confirmRidePopUpPanelRef = useRef(null)
+  const [ride, setRide] = useState(null)
+
+  const { socket } = useContext(SocketContext)
+  const { captain } = useContext(CaptainDataContext)
+
+  useEffect(() => {
+    socket.emit('join', {
+      userId: captain._id,
+      userType: 'captain'
+    })
+    
+    const updateLocation = () => {
+      if (navigator.geolocation) {
+        navigator.geolocation.getCurrentPosition(position => {
+
+          console.log({userId: captain._id,
+            location: {
+              ltd: position.coords.latitude,
+              lng: position.coords.longitude
+            }})
+          socket.emit('update-location-captain', {
+            userId: captain._id,
+            location: {
+              ltd: position.coords.latitude,
+              lng: position.coords.longitude
+            }
+          })
+        })
+      }
+    }
+  
+    const locationInterval = setInterval(updateLocation, 10000)
+    updateLocation()
+    
+    // return () => clearInterval(locationInterval)
+}, [])
+
+  socket.on('new-ride', (data) => {
+    console.log(data)
+    setRide(data)
+    setRidePopUpPanel(true)
+  })
+
+  async function confirmRide() {
+
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/rides/confirm`, {
+      rideId: ride._id,
+      captainId: captain._id
+    }, {
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+    })
+    setRidePopUpPanel(false)
+    setConfirmRidePopUpPanel(true)
+  }
+
+  useGSAP(function() {
+    if (ridePopUpPanel) {
+      gsap.to(ridePopUpPanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(ridePopUpPanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [ridePopUpPanel])
+
+  useGSAP(function() {
+    if (confirmRidePopUpPanel) {
+      gsap.to(confirmRidePopUpPanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePopUpPanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePopUpPanel])
+
+  return (
+    <div className='h-screen'>
+        <div className='fixed p-3 top-0 flex items-center justify-between w-full'>
+          <img className='w-16' src="../src/assets/uber-driver.svg" alt="" />
+          <Link to='/captains/logout' className='h-10 w-10 bg-white flex items-center justify-center rounded-full'>
+              <i className="text-lg font-medium ri-logout-box-r-line"></i>
+          </Link>
+        </div>
+        <div className='h-2/3'>
+            <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+
+        </div>
+        <div className='h-1/3 p-4 rounded-t-xl'>
+            <CaptainDetails />
+        </div>
+        <div ref={ridePopUpPanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <RidePopUp 
+            ride={ride}
+            setRidePopUpPanel={setRidePopUpPanel} 
+            setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} 
+            confirmRide={confirmRide}
+          />
+        </div>
+        <div ref={confirmRidePopUpPanelRef} className='fixed h-screen w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <ConfirmRidePopUp setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} setRidePopUpPanel={setRidePopUpPanel} />
+        </div>
+    </div>
+  )
+}
+
+export default CaptainHome
+```
+- add the below code in Frontend/src/components/RidePopUp.jsx
+```jsx
+import React from 'react'
+
+function RidePopUp(props) {
+  return (
+    <div className='bg-gray-100 p-4 rounded-2xl'>
+        <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+            props.setRidePopUpPanel(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>New Ride Available!</h3>
+        <div className='flex items-center justify-between mt-3 p-3 bg-blue-200 rounded-lg'>
+            <div className='flex items-center gap-3'>
+            <img className='h-12 w-12 rounded-full object-cover' src="https://images.unsplash.com/photo-1499996860823-5214fcc65f8f?q=80&w=932&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="" />
+            <h2 className='text-lg font-medium'>{props.ride?.user.fullname.firstname + " " + props.ride?.fullname.lastname}</h2>
+            </div>
+            <h5 className='text-lg font-semibold'>2.2 KM</h5>
+        </div>
+        
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.ride?.pickup}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.ride?.destination}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹{props.ride?.fare}</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash Cash</p>
+              </div>
+            </div>
+          </div>
+          <div className='flex items-center justify-between mt-5'>
+            <button onClick={() => {
+              props.setRidePopUpPanel(false)
+            }} className=' bg-gray-100 text-gray-600 font-semibold p-3 px-8 rounded-lg'>Ignore</button>
+            <button onClick={() => {
+              props.setConfirmRidePopUpPanel(true)
+              props.confirmRide()
+            }} className=' bg-green-600 text-white font-semibold p-3 px-8 rounded-lg'>Accept</button>
+           
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default RidePopUp
+```
+- in postman at POST at url /rides/create send request
+- add the below code in Backend/routes/ride.routes.js for /confirm route
+```js
+import { Router } from "express";
+import { body, query } from 'express-validator'
+import { confirmRide, createRide, getFare } from "../controllers/ride.controller.js";
+import { authCaptain, authUser } from "../middleware/auth.middleware.js";
+
+const router = Router()
+
+router.post('/create', 
+    authUser,
+    body('pickup').isString().isLength({ min: 3 }).withMessage('Invalid pickup address'),
+    body('destination').isString().isLength({ min: 3 }).withMessage('Invalid destination address'),
+    body('vehicleType').isString().isIn([ 'auto', 'car', 'moto']).withMessage('Invalid vehicleType'),
+    createRide
+)
+
+router.get('/get-fare', 
+    authUser,
+    query('pickup').isString().isLength({ min: 3 }).withMessage('Invalid pickup address'),
+    query('destination').isString().isLength({ min: 3 }).withMessage('Invalid destination address'),
+    getFare
+)
+
+router.post('/confirm', 
+    authCaptain,
+    body('rideId').isMongoId().withMessage('Invalid ride id'),
+    confirmRide
+)
+
+export default router
+```
+- add the below code in controllers/ride.controller.js
+```js
+import { validationResult } from "express-validator"
+import { confirm_Ride, create_Ride, get_Fare } from "../services/ride.service.js";
+import { getAddressCoordinate, getCaptainInTheRadius } from "../services/maps.service.js";
+import { sendMessageToSocketId } from "../socket.js";
+import { Ride } from "../models/ride.model.js";
+
+export const createRide = async (req, res ) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { pickup, destination, vehicleType } = req.body;
+
+    try {
+        const ride = await create_Ride({ user: req.user._id, pickup, destination, vehicleType});
+        res.status(201).json(ride);
+
+        const pickupCoordinates = await getAddressCoordinate(pickup)
+
+        console.log(pickupCoordinates)
+
+        const captainsInRadius = await getCaptainInTheRadius(pickupCoordinates.ltd, pickupCoordinates.lng, 2) //available captains in 2 km radius
+        
+        ride.otp = ""
+
+        const rideWithUser = await Ride.findOne({ _id: ride._id }).populate('user');
+        
+        captainsInRadius.map(captain => {
+            sendMessageToSocketId(captain.socketId, {
+                event: 'new-ride',
+                data: rideWithUser
+            })
+        })
+    }
+    catch( err ) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+
+export const getFare = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+    const { pickup, destination} = req.query;
+
+    try {
+        const fare = await get_Fare(pickup, destination);
+        return res.status(200).json(fare);
+    }
+    catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+
+export const confirmRide = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+    const { rideId } = req.body;
+
+    try {
+        const ride = await confirm_Ride({ rideId, captain: req.captain });
+
+        sendMessageToSocketId(ride.user.socketId, {
+            event: 'ride-confirmed',
+            data: ride
+        })
+        return res.status(200).json(ride);
+    }
+    catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: err.message });
+    }
+}
+```
+- add the below code in services/ride.service.js for fn confirm_Ride
+```js
+import { Ride } from "../models/ride.model.js"
+import { getDistance_Time } from "./maps.service.js"
+import crypto from 'crypto'
+
+
+export async function get_Fare(pickup, destination) {
+    if (!pickup || !destination) {
+        throw new Error('Pickup and destination are required')
+    }
+
+    const distanceTime = await getDistance_Time(pickup, destination);
+
+    const baseFare = {
+        auto: 30,
+        car: 50,
+        moto: 20
+    };
+
+    const perKmRate = {
+        auto: 10,
+        car: 15,
+        moto: 8
+    };
+
+    const perMinuteRate = {
+        auto: 2,
+        car: 3,
+        moto: 1.5
+    };
+
+    console.log(distanceTime);
+
+    const fare = {
+        auto: Math.round(baseFare.auto + ((distanceTime.distance.value / 1000) * perKmRate.auto) + ((distanceTime.duration.value/60) * perMinuteRate.auto)),
+        car: Math.round(baseFare.car + ((distanceTime.distance.value / 1000) * perKmRate.car) + (d(distanceTime.duration.value/60) * perMinuteRate.car)),
+        moto: Math.round(baseFare.moto + ((distanceTime.distance.value / 1000) * perKmRate.moto) + ((distanceTime.duration.value/60) * perMinuteRate.moto)),
+    };
+
+    return fare;
+}
+
+function getOtp(num) {
+    function generateOtp(num) {
+        const otp = crypto.randomInt(Math.pow(10, mun - 1), Math.pow(10, num)).toString();
+        return otp;
+    }
+    return generateOtp(num);
+}
+
+export const create_Ride = async ({
+    user, pickup, destination, vehicleType
+}) => {
+    if (!user || !pickup || !destination || !vehicleType) {
+        throw new Error('All fields are required')
+    }
+
+    const fare = await getFare(pickup, destination);
+
+    console.log(fare);
+
+    const ride = Ride.create({
+        user,
+        pickup,
+        destination,
+        otp: getOtp(6),
+        fare: fare[ vehicleType ]
+    })
+
+    return ride
+}
+
+export const confirm_Ride =  async ({
+    rideId, captain
+}) => {
+    if (!rideId) {
+        throw new Error('Ride id is required')
+    }
+
+    await Ride.findOneAndUpdate({
+        _id: rideId
+    }, {
+        status: 'accepted',
+        captain: captain._id
+    })
+
+    const ride = await Ride.findOne({
+        _id: rideId
+    }).populate('user').populate('captain').select('+otp');
+
+    if (!ride) {
+        throw new Error('Ride not found')
+    }
+    return ride
+}
+```
+- now the event 'ride-confirmed' in confirmRide fn in ride.controller will be triggered in page/Home.jsx
+```jsx
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+import VehiclePanel from '../components/VehiclePanel'
+import ConfirmRide from '../components/ConfirmRide'
+import LookingForDriver from '../components/LookingForDriver'
+import WaitingForDriver from '../components/WaitingForDriver'
+import axios from 'axios'
+import { SocketContext } from '../context/SocketContext.jsx'
+import { UserDataContext } from '../context/UserContext.jsx'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+  const vehiclePanelRef = useRef(null)
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false)
+  const confirmRidePanelRef = useRef(null)
+  const [confirmRidePanel, setConfirmRidePanel] = useState(false)
+  const vehicleFoundRef = useRef(null)
+  const [vehicleFound, setVehicleFound] = useState(false)
+  const waitingForDriverRef = useRef(null)
+  const [waitingForDriver, setWaitingForDriver] = useState(false)
+  const [pickupSuggestions, setPickupSuggestions] = useState([])
+  const [destinationSuggestions, setDestinationSuggestions] = useState([])
+  const [activeField, setActiveField] = useState(null)
+  const [fare, setFare] = useState({})
+  const [vehicleType, setVehicleType] = useState(null)
+  const [ride, setRide] = useState(null)
+
+  const { socket } = useContext(SocketContext);
+  const { user } = useContext(UserDataContext)
+
+  useEffect(() => {
+    socket.emit("join", { userType: "user", userId: user._id } )
+  }, [ user ])
+
+  socket.on('ride-confirmed', ride => {
+    setVehicleFound(false)
+    setWaitingForDriver(true)
+    setRide(ride)
+  })
+  
+
+  const handlePickUpChange = async (e) => {
+    setPickup(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setPickupSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const handleDestinationChange = async (e) => {
+    setDestination(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setDestinationSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  useGSAP(function() {
+    if (vehiclePanelOpen) {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehiclePanelOpen])
+
+  useGSAP(function() {
+    if (confirmRidePanel) {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePanel])
+
+  useGSAP(function() {
+    if (vehicleFound) {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehicleFound])
+
+  useGSAP(function() {
+    if (waitingForDriver) {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [waitingForDriver])
+
+  async function findTrip() {
+    setVehiclePanelOpen(true)
+    setPanelOpen(false)
+
+    const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/rides/get-fare`, {
+      params: { pickup, destination },
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    setFare(response.data)
+  }
+
+  async function createRide() {
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/rides/create`, {
+      pickup,
+      destination,
+      vehicleType
+    }, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    console.log(response.data)
+  }
+
+  return (
+    <div className='h-screen relative overflow-hidden'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('pickup')
+              }}
+              value={pickup}
+              onChange={(e) => {
+                handlePickUpChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('destination')
+              }}
+              value={destination}
+              onChange={(e) => {
+                handleDestinationChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+          <button 
+            onClick={findTrip}
+            className='bg-black text-white px-4 py-2 rounded-lg mt-3 w-full'>
+            Find Trip
+          </button>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+          <LocationSearchPanel 
+            suggestions={activeField === 'pickup' ? pickupSuggestions: destinationSuggestions}
+            setPanelOpen={setPanelOpen} 
+            setVehiclePanelOpen={setVehiclePanelOpen} 
+            setPickup={setPickup}
+            setDestination={setDestination}
+            activeField={activeField}
+          />
+        </div>
+      </div>
+
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full'>
+        <VehiclePanel 
+          selectVehicle={setVehicleType}
+          fare={fare} setConfirmRidePanel={setConfirmRidePanel} setVehiclePanelOpen={setVehiclePanelOpen}/>
+      </div>
+
+      {/* Confirmed Ride */}
+      <div ref={confirmRidePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <ConfirmRide 
+          createRide={createRide}
+          pickup={pickup}
+          destination={destination}
+          fare={fare}
+          vehicleType={vehicleType}
+          setConfirmRidePanel={setConfirmRidePanel} setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Looking for nearby drivers, vehicle found */}
+      <div ref={vehicleFoundRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <LookingForDriver 
+          createRide={createRide}
+          pickup={pickup}
+          destination={destination}
+          fare={fare}
+          vehicleType={vehicleType}
+          setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Waiting for the driver*/}
+      <div ref={waitingForDriverRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl'>
+        <WaitingForDriver 
+          ride={ride}
+          setVehicleFound={setVehicleFound}
+          setWaitingForDriver={setWaitingForDriver}
+          waitingForDriver={waitingForDriver}/>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+- add the below code in components/WaitingForDriver.jsx and get the otp to user as well then only the ride will start
+```jsx
+import React from 'react'
+
+function WaitingForDriver(props) {
+  return (
+    <div>
+      <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+          props.waitingForDriver(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Meet at the pickup point</h3>
+        <div className='flex items-center justify-between'>
+          <img className='h-10' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+          <div className='text-right'>
+            <h2 className='text-sm font-medium uppercase text-gray-700 '>{props.ride?.captain.fullname.firstname}</h2>
+            <h4 className='text-xl font-semibold uppercase -mt-1 -mb-1'>{props.ride?.captain.vehicle.plate}</h4>
+            <p className='text-sm text-gray-600'>Maruti Suzuki Alto K10</p>
+            <h1 className='text-lg font-semibold'> {props.ride?.otp}</h1>
+          </div>
+        </div>
+
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.ride?.pickup}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.ride?.destination}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹{props.ride?.fare}</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash cash</p>
+              </div>
+            </div>
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default WaitingForDriver
+```
+- add the below code in pages/CaptainHome.jsx
+```jsx
+import React, { useState } from 'react'
+import { Link } from 'react-router-dom'
+
+function ConfirmRidePopUp(props) {
+
+    const [otp, setOtp] = useState('')
+
+    const submitHandler = (e) => {
+        e.preventDefault()
+    }
+  return (
+    <div>
+        <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+            props.setConfirmRidePopUpPanel(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Confirm this ride to Start</h3>
+        <div className='flex items-center justify-between mt-3 p-3 bg-blue-200 rounded-lg'>
+            <div className='flex items-center gap-3'>
+            <img className='h-12 w-12 rounded-full object-cover' src="https://images.unsplash.com/photo-1499996860823-5214fcc65f8f?q=80&w=932&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="" />
+            <h2 className='text-lg font-medium capitalize'>{props.ride?.user.fullname.firstname}</h2>
+            </div>
+            <h5 className='text-lg font-semibold'>2.2 KM</h5>
+        </div>
+        
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.ride?.pickup}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.ride?.destination}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹{props.ride?.fare}</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash Cash</p>
+              </div>
+            </div>
+          </div>
+          {/* Confirm OTP */}
+
+          <div className='mt-6 w-full'>
+            <form onSubmit={(e) => {
+                submitHandler(e)
+            }}>
+                <input value={otp} onChange={(e) => setOtp(e.target.value)} type="text" className='bg-[#eee] px-6 py-4 text-lg rounded-lg w-full mt-3 font-mono' placeholder='Enter OTP'/>
+                <Link to='/captain-riding' className='w-full mt-5 text-lg flex justify-center bg-green-600 text-white font-semibold p-3 rounded-lg'>Confirm</Link>
+                <button onClick={() => {
+                    props.setConfirmRidePopUpPanel(false)
+                    props.setRidePopUpPanel(false)
+                }} className='w-full mt-1 bg-red-700 text-lg text-white font-semibold p-3 rounded-lg'>Cancel</button>
+            </form>
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default ConfirmRidePopUp
+```
+- add the below code in components/ConfirmRidePopUp.jsx
+```jsx
+        <div ref={confirmRidePopUpPanelRef} className='fixed h-screen w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <ConfirmRidePopUp 
+            ride={ride}
+            setConfirmRidePopUpPanel={setConfirmRidePopUpPanel} setRidePopUpPanel={setRidePopUpPanel} />
+        </div>
+    </div>
+  )
+}
+
+export default CaptainHome
+```
+- to make a route for otp as well, hit api endpoints so the ride status becomes ongoing and other for status to be completed
+- add the below code in Backend/services/ride.service.js
+```js
+import { Ride } from "../models/ride.model.js"
+import { getDistance_Time } from "./maps.service.js"
+import crypto from 'crypto'
+
+
+export async function get_Fare(pickup, destination) {
+    if (!pickup || !destination) {
+        throw new Error('Pickup and destination are required')
+    }
+
+    const distanceTime = await getDistance_Time(pickup, destination);
+
+    const baseFare = {
+        auto: 30,
+        car: 50,
+        moto: 20
+    };
+
+    const perKmRate = {
+        auto: 10,
+        car: 15,
+        moto: 8
+    };
+
+    const perMinuteRate = {
+        auto: 2,
+        car: 3,
+        moto: 1.5
+    };
+
+    console.log(distanceTime);
+
+    const fare = {
+        auto: Math.round(baseFare.auto + ((distanceTime.distance.value / 1000) * perKmRate.auto) + ((distanceTime.duration.value/60) * perMinuteRate.auto)),
+        car: Math.round(baseFare.car + ((distanceTime.distance.value / 1000) * perKmRate.car) + (d(distanceTime.duration.value/60) * perMinuteRate.car)),
+        moto: Math.round(baseFare.moto + ((distanceTime.distance.value / 1000) * perKmRate.moto) + ((distanceTime.duration.value/60) * perMinuteRate.moto)),
+    };
+
+    return fare;
+}
+
+function getOtp(num) {
+    function generateOtp(num) {
+        const otp = crypto.randomInt(Math.pow(10, mun - 1), Math.pow(10, num)).toString();
+        return otp;
+    }
+    return generateOtp(num);
+}
+
+export const create_Ride = async ({
+    user, pickup, destination, vehicleType
+}) => {
+    if (!user || !pickup || !destination || !vehicleType) {
+        throw new Error('All fields are required')
+    }
+
+    const fare = await getFare(pickup, destination);
+
+    console.log(fare);
+
+    const ride = Ride.create({
+        user,
+        pickup,
+        destination,
+        otp: getOtp(6),
+        fare: fare[ vehicleType ]
+    })
+
+    return ride
+}
+
+export const confirm_Ride =  async ({
+    rideId, captain
+}) => {
+    if (!rideId) {
+        throw new Error('Ride id is required')
+    }
+
+    await Ride.findOneAndUpdate({
+        _id: rideId
+    }, {
+        status: 'accepted',
+        captain: captain._id
+    })
+
+    const ride = await Ride.findOne({
+        _id: rideId
+    }).populate('user').populate('captain').select('+otp');
+
+    if (!ride) {
+        throw new Error('Ride not found')
+    }
+    return ride
+}
+
+export const start_Ride = async ({ rideId, otp, captain }) => {
+    if (!rideId || !otp) {
+        throw new Error('Ride id and OTP are required')
+    }
+
+    const ride = await Ride.findOne({
+        _id: rideId
+    }).populate('user').populate('captain').select('+otp');
+
+    if (!ride) {
+        throw new Error('Ride not found')
+    }
+
+    if (ride.status !== 'accepted') {
+        throw new Error('Ride not accepted');
+    }
+
+    if (ride.otp !== otp) {
+        throw new Error('Invalid OTP');
+    }
+
+    await Ride.findOneAndUpdate({
+        _id: rideId
+    }, {
+        status: 'ongoing'
+    })
+    return ride;
+}
+
+export const end_Ride = async ({ rideId, captain }) => {
+    if (!rideId) {
+        throw new Error('Ride id is required')
+    }
+
+    const ride = await Ride.findOne({
+        _id: rideId,
+        captain: captain._id
+    }).populate('user').populate('captain').select('+otp');
+
+    if (!ride) {
+        throw new Error('Ride not found')
+    }
+
+    if (ride.status !== 'ongoing') {
+        throw new Error('Ride not ongoing')
+    }
+
+    await Ride.findOneAndUpdate({
+        _id: rideId
+    }, {
+        status: 'completed'
+    })
+    return ride;
+}
+```
+- add the below code in controllers/ride.controller.js
+```js
+import { validationResult } from "express-validator"
+import { confirm_Ride, create_Ride, end_Ride, get_Fare, start_Ride } from "../services/ride.service.js";
+import { getAddressCoordinate, getCaptainInTheRadius } from "../services/maps.service.js";
+import { sendMessageToSocketId } from "../socket.js";
+import { Ride } from "../models/ride.model.js";
+
+export const createRide = async (req, res ) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { pickup, destination, vehicleType } = req.body;
+
+    try {
+        const ride = await create_Ride({ user: req.user._id, pickup, destination, vehicleType});
+        res.status(201).json(ride);
+
+        const pickupCoordinates = await getAddressCoordinate(pickup)
+
+        console.log(pickupCoordinates)
+
+        const captainsInRadius = await getCaptainInTheRadius(pickupCoordinates.ltd, pickupCoordinates.lng, 2) //available captains in 2 km radius
+        
+        ride.otp = ""
+
+        const rideWithUser = await Ride.findOne({ _id: ride._id }).populate('user');
+        
+        captainsInRadius.map(captain => {
+            sendMessageToSocketId(captain.socketId, {
+                event: 'new-ride',
+                data: rideWithUser
+            })
+        })
+    }
+    catch( err ) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+
+export const getFare = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+    const { pickup, destination} = req.query;
+
+    try {
+        const fare = await get_Fare(pickup, destination);
+        return res.status(200).json(fare);
+    }
+    catch (err) {
+        return res.status(500).json({ message: err.message });
+    }
+}
+
+export const confirmRide = async (req, res) => {
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() })
+    }
+
+    const { rideId } = req.body;
+
+    try {
+        const ride = await confirm_Ride({ rideId, captain: req.captain });
+
+        sendMessageToSocketId(ride.user.socketId, {
+            event: 'ride-confirmed',
+            data: ride
+        })
+        return res.status(200).json(ride);
+    }
+    catch (err) {
+        console.log(err)
+        return res.status(500).json({ message: err.message });
+    }
+}
+
+export const startRide = async (req, res) => {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { rideId, otp } = req.query;
+
+    try {
+        const ride = await start_Ride({ rideId, otp, captain: req.captain });
+
+        console.log(ride);
+
+        sendMessageToSocketId(ride.user.socketId, {
+            event: 'ride-started',
+            data: ride
+        })
+
+        return res.status(200).json(ride);
+    } catch (err) {
+        return res.status(500).json({ message: err.message});
+    }
+}
+
+export const endRide = async (req, res) => {
+    const errors = validationResult(req)
+    if (!errors.isEmpty()) {
+        return res.status(400).json({ errors: errors.array() });
+    }
+
+    const { rideId } = req.body;
+
+    try {
+        const ride = await end_Ride({ rideId, captain: req.captain });
+
+        sendMessageToSocketId(ride.user.socketId, {
+            event: 'ride-ended',
+            data: ride
+        })
+
+        return res.status(200).json(ride);
+    } catch (err) {
+        return res.status(500).json({ message: err.message});
+    }
+}
+```
+- add the below code in Backend/routes/ride.route.js
+```js
+import { Router } from "express";
+import { body, query } from 'express-validator'
+import { confirmRide, createRide, endRide, getFare, startRide } from "../controllers/ride.controller.js";
+import { authCaptain, authUser } from "../middleware/auth.middleware.js";
+
+const router = Router()
+
+router.post('/create', 
+    authUser,
+    body('pickup').isString().isLength({ min: 3 }).withMessage('Invalid pickup address'),
+    body('destination').isString().isLength({ min: 3 }).withMessage('Invalid destination address'),
+    body('vehicleType').isString().isIn([ 'auto', 'car', 'moto']).withMessage('Invalid vehicleType'),
+    createRide
+)
+
+router.get('/get-fare', 
+    authUser,
+    query('pickup').isString().isLength({ min: 3 }).withMessage('Invalid pickup address'),
+    query('destination').isString().isLength({ min: 3 }).withMessage('Invalid destination address'),
+    getFare
+)
+
+router.post('/confirm', 
+    authCaptain,
+    body('rideId').isMongoId().withMessage('Invalid ride id'),
+    confirmRide
+)
+
+router.get('/start-ride', 
+    authCaptain,
+    query('rideId').isMongoId().withMessage('Invalid ride id'),
+    query('otp').isString().isLength({ min: 6, max: 6 }).withMessage('Invalid OTP'),
+    startRide
+)
+
+router.post('/end-ride',
+    authCaptain,
+    body('rideId').isMongoId().withMessage('Invalid ride id'),
+    endRide
+)
+
+export default router
+```
+- add the below code in components/ConfirmRidePopUp.jsx and this will navigate to the /captain-riding route in Frontend/src/App
+```jsx
+import React, { useState } from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import axios from 'axios'
+
+function ConfirmRidePopUp(props) {
+
+    const [otp, setOtp] = useState('')
+    const navigate = useNavigate()
+
+    const submitHandler = async (e) => {
+        e.preventDefault()
+
+        const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/rides/start-ride`, {
+          params: {
+            rideId: props.ride._id,
+            otp: otp
+          },
+          headers: {
+            Authorization: `Bearer ${localStorage.getItem('token')}`
+          }
+        })
+
+        if (response.status === 200) {
+          props.setConfirmRidePopUpPanel(false)
+          props.setRidePopUpPanel(false)
+          navigate('/captain-riding', { state: { ride: props.ride }})
+        }
+    }
+  return (
+    <div>
+        <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+            props.setRidePopUpPanel(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Confirm this ride to Start</h3>
+        <div className='flex items-center justify-between mt-3 p-3 bg-blue-200 rounded-lg'>
+            <div className='flex items-center gap-3'>
+            <img className='h-12 w-12 rounded-full object-cover' src="https://images.unsplash.com/photo-1499996860823-5214fcc65f8f?q=80&w=932&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="" />
+            <h2 className='text-lg font-medium capitalize'>{props.ride?.user.fullname.firstname}</h2>
+            </div>
+            <h5 className='text-lg font-semibold'>2.2 KM</h5>
+        </div>
+        
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.ride?.pickup}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.ride?.destination}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹{props.ride?.fare}</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash Cash</p>
+              </div>
+            </div>
+          </div>
+          {/* Confirm OTP */}
+
+          <div className='mt-6 w-full'>
+            <form onSubmit={submitHandler}>
+                <input value={otp} onChange={(e) => setOtp(e.target.value)} type="text" className='bg-[#eee] px-6 py-4 text-lg rounded-lg w-full mt-3 font-mono' placeholder='Enter OTP'/>
+                <button className='w-full mt-5 text-lg flex justify-center bg-green-600 text-white font-semibold p-3 rounded-lg'>Confirm</button>
+                <button onClick={() => {
+                    props.setConfirmRidePopUpPanel(false)
+                    props.setRidePopUpPanel(false)
+                }} className='w-full mt-1 bg-red-700 text-lg text-white font-semibold p-3 rounded-lg'>Cancel</button>
+            </form>
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default ConfirmRidePopUp
+```
+- to navigate it to pages/Riding we add the below code in pages/Home.jsx
+```jsx
+import React, { useContext, useEffect, useRef, useState } from 'react'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+import 'remixicon/fonts/remixicon.css'
+import LocationSearchPanel from '../components/LocationSearchPanel'
+import VehiclePanel from '../components/VehiclePanel'
+import ConfirmRide from '../components/ConfirmRide'
+import LookingForDriver from '../components/LookingForDriver'
+import WaitingForDriver from '../components/WaitingForDriver'
+import axios from 'axios'
+import { SocketContext } from '../context/SocketContext.jsx'
+import { UserDataContext } from '../context/UserContext.jsx'
+import { useNavigate } from 'react-router-dom'
+
+function Home() {
+  const [pickup, setPickup] = useState('')
+  const [destination, setDestination] = useState('')
+  const [panelOpen, setPanelOpen] = useState(false)
+  const panelRef = useRef(null)
+  const panelCloseRef = useRef(null)
+  const vehiclePanelRef = useRef(null)
+  const [vehiclePanelOpen, setVehiclePanelOpen] = useState(false)
+  const confirmRidePanelRef = useRef(null)
+  const [confirmRidePanel, setConfirmRidePanel] = useState(false)
+  const vehicleFoundRef = useRef(null)
+  const [vehicleFound, setVehicleFound] = useState(false)
+  const waitingForDriverRef = useRef(null)
+  const [waitingForDriver, setWaitingForDriver] = useState(false)
+  const [pickupSuggestions, setPickupSuggestions] = useState([])
+  const [destinationSuggestions, setDestinationSuggestions] = useState([])
+  const [activeField, setActiveField] = useState(null)
+  const [fare, setFare] = useState({})
+  const [vehicleType, setVehicleType] = useState(null)
+  const [ride, setRide] = useState(null)
+
+  const navigate = useNavigate()
+
+  const { socket } = useContext(SocketContext);
+  const { user } = useContext(UserDataContext)
+
+  useEffect(() => {
+    socket.emit("join", { userType: "user", userId: user._id } )
+  }, [ user ])
+
+  socket.on('ride-confirmed', ride => {
+    setVehicleFound(false)
+    setWaitingForDriver(true)
+    setRide(ride)
+  })
+
+  socket.on('ride-started', ride => {
+    setWaitingForDriver(false)
+    navigate('/riding', { state: { ride }})
+  })
+  
+
+  const handlePickUpChange = async (e) => {
+    setPickup(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setPickupSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const handleDestinationChange = async (e) => {
+    setDestination(e.target.value)
+    try {
+      const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/maps/get-suggestions`,{
+        params: { input: e.target.value },
+        headers: {
+          Authorization: `Bearer ${localStorage.getItem('token')}`
+        }
+      })
+        setDestinationSuggestions(response.data)
+    } catch (err) {
+        console.error(err)
+        throw new Error(err)
+    }
+  }
+
+  const submitHandler = (e) => {
+    e.preventDefault()
+  }
+
+  useGSAP(function () {
+    if (panelOpen) {
+      gsap.to(panelRef.current, {
+        height: '70%',
+        padding: 20
+        // opacity: 1
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 1
+      })
+    } else {
+      gsap.to(panelRef.current, {
+        height: '0%',
+        padding: 0
+        // opacity: 0
+      })
+      gsap.to(panelCloseRef.current, {
+        opacity: 0
+      })
+    }
+  }, [panelOpen])
+
+  useGSAP(function() {
+    if (vehiclePanelOpen) {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehiclePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehiclePanelOpen])
+
+  useGSAP(function() {
+    if (confirmRidePanel) {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(confirmRidePanelRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [confirmRidePanel])
+
+  useGSAP(function() {
+    if (vehicleFound) {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(vehicleFoundRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [vehicleFound])
+
+  useGSAP(function() {
+    if (waitingForDriver) {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(0)'
+      })
+    }
+    else {
+      gsap.to(waitingForDriverRef.current, {
+        transform: 'translateY(100%)'
+      })
+    }
+  }, [waitingForDriver])
+
+  async function findTrip() {
+    setVehiclePanelOpen(true)
+    setPanelOpen(false)
+
+    const response = await axios.get(`${import.meta.env.VITE_BASE_URL}/rides/get-fare`, {
+      params: { pickup, destination },
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    setFare(response.data)
+  }
+
+  async function createRide() {
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/rides/create`, {
+      pickup,
+      destination,
+      vehicleType
+    }, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+    console.log(response.data)
+  }
+
+  return (
+    <div className='h-screen relative overflow-hidden'>
+      <img className='w-16 absolute left-5 top-5' src="../src/assets/1659761100uber-logo-png.png" alt="" />
+      <div className='h-screen w-screen'>
+        {/* image for temporary use */}
+        <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+      </div>
+      <div className=' flex flex-col justify-end h-screen absolute top-0 w-full'>
+        <div className='h-[30%] p-6 bg-white relative'>
+          <h5 
+            ref={panelCloseRef}
+            onClick={() => {
+              setPanelOpen(false)
+            }}
+            className='absolute opacity-0 top-4 right-4 text-2xl'>
+            <i className="ri-arrow-down-wide-line"></i>
+          </h5>
+          <h4 className='text-2xl font-semibold'>Find a trip</h4>
+          <form onSubmit={(e) => {
+            submitHandler(e)
+          }}>
+            <div className='line absolute h-16 w-1 top-[40%] left-8 bg-gray-800 rounded-full'></div>
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('pickup')
+              }}
+              value={pickup}
+              onChange={(e) => {
+                handlePickUpChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Add a pick-up location' 
+            />
+            <input 
+              onClick={() => {
+                setPanelOpen(true)
+                setActiveField('destination')
+              }}
+              value={destination}
+              onChange={(e) => {
+                handleDestinationChange
+              }}
+              className='bg-[#eee] px-12 py-2 text-lg rounded-lg w-full mt-3' 
+              type="text" 
+              placeholder='Enter your destination' 
+            />
+          </form>
+          <button 
+            onClick={findTrip}
+            className='bg-black text-white px-4 py-2 rounded-lg mt-3 w-full'>
+            Find Trip
+          </button>
+        </div>
+        <div ref={panelRef} className=' bg-white h-0'> {/* hidden h-0, not hidden h-[70%] */}
+          <LocationSearchPanel 
+            suggestions={activeField === 'pickup' ? pickupSuggestions: destinationSuggestions}
+            setPanelOpen={setPanelOpen} 
+            setVehiclePanelOpen={setVehiclePanelOpen} 
+            setPickup={setPickup}
+            setDestination={setDestination}
+            activeField={activeField}
+          />
+        </div>
+      </div>
+
+      {/* Choose vehicle panel */}
+      <div ref={vehiclePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full'>
+        <VehiclePanel 
+          selectVehicle={setVehicleType}
+          fare={fare} setConfirmRidePanel={setConfirmRidePanel} setVehiclePanelOpen={setVehiclePanelOpen}/>
+      </div>
+
+      {/* Confirmed Ride */}
+      <div ref={confirmRidePanelRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <ConfirmRide 
+          createRide={createRide}
+          pickup={pickup}
+          destination={destination}
+          fare={fare}
+          vehicleType={vehicleType}
+          setConfirmRidePanel={setConfirmRidePanel} setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Looking for nearby drivers, vehicle found */}
+      <div ref={vehicleFoundRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+        <LookingForDriver 
+          createRide={createRide}
+          pickup={pickup}
+          destination={destination}
+          fare={fare}
+          vehicleType={vehicleType}
+          setVehicleFound={setVehicleFound}/>
+      </div>
+
+      {/* Waiting for the driver*/}
+      <div ref={waitingForDriverRef} className='fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl'>
+        <WaitingForDriver 
+          ride={ride}
+          setVehicleFound={setVehicleFound}
+          setWaitingForDriver={setWaitingForDriver}
+          waitingForDriver={waitingForDriver}/>
+      </div>
+    </div>
+  )
+}
+
+export default Home
+```
+
+- showing captain's live location to user
+- add the below code in pages/CaptainRiding.jsx
+```jsx
+import React, { useRef, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
+import FinishRide from '../components/FinishRide'
+import { useGSAP } from '@gsap/react'
+import gsap from 'gsap'
+
+function CaptainRiding(props) {
+    const [finishRidePanel, setFinishRidePanel] = useState(false)
+    const finishRidePanelRef = useRef(null)
+    const location = useLocation()
+    const rideData = location.state?.ride
+  
+    useGSAP(function() {
+      if (finishRidePanel) {
+        gsap.to(finishRidePanelRef.current, {
+          transform: 'translateY(0)'
+        })
+      }
+      else {
+        gsap.to(finishRidePanelRef.current, {
+          transform: 'translateY(100%)'
+        })
+      }
+    }, [finishRidePanel])
+
+  return (
+    <div className='h-screen'>
+        <div className='fixed p-3 top-0 flex items-center justify-between w-full'>
+          <img className='w-16' src="../src/assets/uber-driver.svg" alt="" />
+          <Link to='/captains/logout' className='h-10 w-10 bg-white flex items-center justify-center rounded-full'>
+              <i className="text-lg font-medium ri-logout-box-r-line"></i>
+          </Link>
+        </div>
+        <div className='h-4/5'>
+            <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+
+        </div>
+        <div className='h-1/5 p-6 flex items-center justify-between bg-yellow-400 relative'
+        onClick={()=>{
+            setFinishRidePanel(true)
+        }}>
+            <h5 className='p-1 text-center absolute w-[95%] top-0' onClick={() => {
+                props.setFinishRidePanel(false)
+            }}>
+            <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+            </h5>
+            <h4 className='text-xl font-semibold'>1.6 KM away</h4>
+            <button className=' bg-green-600 text-white font-semibold p-3 px-8 rounded-lg'>Complete Ride</button>
+        </div>
+        <div ref={finishRidePanelRef} className='fixed h-screen w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full'>
+          <FinishRide 
+            ride={rideData}
+            setFinishRidePanel={setFinishRidePanel}/>
+        </div>
+        
+    </div>
+  )
+}
+
+export default CaptainRiding
+```
+- add the below code in components/FinishRide.jsx
+```jsx
+import React from 'react'
+import { Link, useNavigate } from 'react-router-dom'
+import axios from 'axios'
+
+function FinishRide(props) {
+
+  const navigate = useNavigate()
+
+  async function endRide() {
+    const response = await axios.post(`${import.meta.env.VITE_BASE_URL}/rides/end-ride`, {
+      rideId: props.ride._id
+    }, {
+      headers: {
+        Authorization: `Bearer ${localStorage.getItem('token')}`
+      }
+    })
+
+    if (response.status === 200) {
+      navigate('/captain-home')
+    }
+  }
+  return (
+    <div>
+        <h5 className='p-1 text-center absolute w-[93%] top-0' onClick={() => {
+            props.setFinishRidePanel(false)
+          }}>
+          <i className="text-3xl text-gray-400 ri-arrow-down-wide-line"></i>
+        </h5>
+        <h3 className='text-2xl font-semibold mb-5 '>Finish this Ride</h3>
+        <div className='flex items-center justify-between mt-3 p-4 border-2 border-yellow-400 rounded-lg'>
+            <div className='flex items-center gap-3'>
+            <img className='h-12 w-12 rounded-full object-cover' src="https://images.unsplash.com/photo-1499996860823-5214fcc65f8f?q=80&w=932&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D" alt="" />
+            <h2 className='text-lg font-medium'>{props.ride?.user.fullname.firstname + " " + props.ride?.user.fullname.lastname}</h2>
+            </div>
+            <h5 className='text-lg font-semibold'>2.2 KM</h5>
+        </div>
+        
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-user-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>562/11-A</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.ride?.pickup}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{props.ride?.destination}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹{props.ride?.fare}</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash Cash</p>
+              </div>
+            </div>
+          </div>
+          {/* Confirm OTP */}
+
+          <div className='mt-6 w-full'>
+
+                <button
+                  onClick={endRide}
+                  className='w-full mt-5 text-lg flex justify-center bg-green-600 text-white font-semibold p-3 rounded-lg'>Finish Ride</button>
+               
+               <p className='mt-10 text-xs'>Click on finish ride button if you have completed the payment</p>
+          </div>
+        </div>
+    </div>
+  )
+}
+
+export default FinishRide
+```
+- add the below code in pages/Riding.jsx
+```jsx
+import React, { useContext } from 'react'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { SocketContext } from '../context/SocketContext'
+
+function Riding() {
+  const location = useLocation()
+  const { ride } = location.state ||{} // Retrieve ride data
+  const { socket } = useContext(SocketContext)
+  const navigate = useNavigate()
+
+  socket.on("ride-ended", () => {
+    navigate('/home')
+  })
+
+  return (
+    <div className='h-screen'>
+        <Link to='/home' className='fixed h-10 w-10 right-2 top-2 bg-white flex items-center justify-center rounded-full'>
+            <i className="text-lg font-medium ri-home-5-line"></i>
+        </Link>
+        <div className='h-1/2'>
+            <img className='h-full w-full object-cover' src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif" alt="" />
+
+        </div>
+        <div className='h-1/2 p-4'>
+            <div className='flex items-center justify-between'>
+                <img className='h-10' src="https://www.uber-assets.com/image/upload/f_auto,q_auto:eco,c_fill,h_538,w_956/v1688398971/assets/29/fbb8b0-75b1-4e2a-8533-3a364e7042fa/original/UberSelect-White.png" alt="" />
+                <div className='text-right'>
+                    <h2 className='text-sm font-medium uppercase text-gray-700 '>{ride?.captain.fullname.firstname}</h2>
+                    <h4 className='text-xl font-semibold uppercase -mt-1 -mb-1'>{ride?.captain.vehicle.plate}</h4>
+                    <p className='text-sm text-gray-600'>Maruti Suzuki Alto K10</p>
+                </div>
+            </div>
+
+        <div className='flex gap-2 justify-between items-center flex-col'>
+          <div className='w-full mt-5'>
+            
+            <div className='flex items-center gap-5 p-3 border-b-2 border-gray-200'>
+              <i className="text-lg ri-map-pin-2-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>98-G</h3>
+                <p className='text-sm -mt-1 text-gray-600'>{ride?.destination}</p>
+              </div>
+            </div>
+            <div className='flex items-center gap-5 p-3'>
+              <i className="test-lg ri-wallet-3-fill"></i>
+              <div>
+                <h3 className='text-lg font-medium'>₹{ride?.fare}</h3>
+                <p className='text-sm -mt-1 text-gray-600'>Cash cash</p>
+              </div>
+            </div>
+          </div>
+        </div>
+            <button className='w-full mt-5 bg-green-600 text-white font-semibold p-2 rounded-lg'>Make a Payment</button>
+        </div>
+    </div>
+  )
+}
+
+export default Riding
+```
+- when i click on finidhRide button, te captain will got to CaptainHome , ride.status will be set to completed and the user should go to Home
+- create a route /end-ride in ride.route and add the event ride-ended in pages/Riding
+
+- Now Live Tracking will start use Google maps
+- create a file components/LiveTracking.jsx
+```jsx
+```
+- to use google maps n react we install a package in Frontend folder
+- npm i @react-google-maps/api
+- it does not work w/o teh googe maps apikey we generated earlier , add it to our .env file here as well

@@ -17,9 +17,11 @@ app.get('/', (req, res) => {
 import userRouter from './routes/user.route.js'
 import captainRouter from './routes/captain.route.js'
 import mapsRouter from './routes/maps.route.js'
+import rideRouter from './routes/ride.route.js'
 
 app.use("/users", userRouter)
 app.use("/captains", captainRouter)
 app.use("/maps", mapsRouter)
+app.use("/rides", rideRouter)
 
 export {app}

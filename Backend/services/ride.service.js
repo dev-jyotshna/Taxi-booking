@@ -11,7 +11,20 @@ export async function get_Fare(pickup, destination) {
   const origin = await getAddressCoordinate(pickup);
   const dest = await getAddressCoordinate(destination);
 
-  const distanceTime = await getDistance_Time(pickup, destination);
+  let distanceTime;
+  try {
+    distanceTime = await getDistance_Time(origin, dest);
+  } catch (err) {
+    console.error("Error fetching distance/time:", err);
+    throw new Error("Failed to fetch distance and time");
+  }
+
+  if (!distanceTime || !distanceTime.distance || !distanceTime.duration) {
+    console.error("Incomplete distanceTime data:", distanceTime);
+    throw new Error("Invalid response from distance API");
+  }
+
+  const baseMinutes = Math.round(distanceTime.duration.value / 60);
 
   const baseFare = {
     auto: 30,
@@ -31,7 +44,7 @@ export async function get_Fare(pickup, destination) {
     moto: 1.5,
   };
 
-  console.log(distanceTime);
+  console.log("Distance Time get fare:", distanceTime);
 
   const fare = {
     auto: Math.round(
@@ -49,6 +62,11 @@ export async function get_Fare(pickup, destination) {
         (distanceTime.distance.value / 1000) * perKmRate.moto +
         (distanceTime.duration.value / 60) * perMinuteRate.moto
     ),
+    eta: {
+      auto: Math.round(baseMinutes * 1.2), //slower
+      car: baseMinutes,
+      moto: Math.round(baseMinutes * 0.7), //faster
+    },
   };
 
   return fare;
@@ -74,7 +92,7 @@ export const create_Ride = async ({
     throw new Error("All fields are required");
   }
 
-  const fare = await getFare(pickup, destination);
+  const fare = await get_Fare(pickup, destination);
 
   console.log(fare);
 

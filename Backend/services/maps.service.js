@@ -81,7 +81,12 @@ export const getDistance_Time = async (origin, destination) => {
     throw new Error("Origin and destination are required");
   }
 
+  // Log if API key is missing
   const apiKey = process.env.ORS_API_KEY;
+  if (!apiKey) {
+    console.error("ORS API key is missing");
+    throw new Error("ORS API key is not set");
+  }
 
   const coordinates = [
     [origin.lng, origin.lat],
@@ -104,10 +109,11 @@ export const getDistance_Time = async (origin, destination) => {
 
     const summary = response.data.routes[0].summary;
     return {
-      distance: summary.distance, // meters
-      duration: summary.duration, // seconds
+      distance: { value: summary.distance }, // in meters
+      duration: { value: summary.duration }, // in seconds
     };
   } catch (err) {
+    // ✅ Step 4: Log the detailed error
     if (err.response) {
       console.error("ORS API Error:", err.response.data);
     } else {

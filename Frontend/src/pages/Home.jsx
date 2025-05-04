@@ -222,13 +222,13 @@ function Home() {
         src="../src/assets/1659761100uber-logo-png.png"
         alt=""
       />
-      <div className="h-screen w-screen">
-        {/* image for temporary use */}
+      <div className="relative h-screen w-screen">
+        {/* image for temporary use
         <img
           className="h-full w-full object-cover"
           src="https://miro.medium.com/v2/resize:fit:1400/0*gwMx05pqII5hbfmX.gif"
           alt=""
-        />
+        /> */}
         <LiveTracking />
       </div>
       <div className=" flex flex-col justify-end h-screen absolute top-0 w-full">
@@ -284,7 +284,6 @@ function Home() {
           </button>
         </div>
         <div ref={panelRef} className=" bg-white h-0">
-          {" "}
           {/* hidden h-0, not hidden h-[70%] */}
           <LocationSearchPanel
             suggestions={
@@ -304,7 +303,7 @@ function Home() {
       {/* Choose vehicle panel */}
       <div
         ref={vehiclePanelRef}
-        className="fixed w-full z-10 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full"
+        className="fixed w-full z-50 bottom-0 bg-white px-3 py-10 pt-12 rounded-xl translate-y-full"
       >
         <VehiclePanel
           selectVehicle={setVehicleType}
@@ -317,7 +316,7 @@ function Home() {
       {/* Confirmed Ride */}
       <div
         ref={confirmRidePanelRef}
-        className="fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full"
+        className="fixed w-full z-50 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full"
       >
         <ConfirmRide
           createRide={createRide}
@@ -333,7 +332,7 @@ function Home() {
       {/* Looking for nearby drivers, vehicle found */}
       <div
         ref={vehicleFoundRef}
-        className="fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full"
+        className="fixed w-full z-50 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl translate-y-full"
       >
         <LookingForDriver
           createRide={createRide}
@@ -348,7 +347,7 @@ function Home() {
       {/* Waiting for the driver*/}
       <div
         ref={waitingForDriverRef}
-        className="fixed w-full z-10 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl"
+        className="fixed w-full z-50 bottom-0 bg-white px-3 py-6 pt-12 rounded-xl"
       >
         <WaitingForDriver
           ride={ride}

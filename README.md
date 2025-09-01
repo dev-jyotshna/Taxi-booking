@@ -1,4 +1,6 @@
-# 🚖 Uber Clone(Taxi booking) – MERN + OpenStreetMap / Google Maps API
+# 🚖 Uber Clone(Taxi booking)
+
+– MERN + OpenStreetMap / Google Maps API
 
 A full-stack Uber-clone application built with the **MERN stack** and powered by **OpenStreetMap (OSM)/ Google Maps API** for real-time ride booking.
 
@@ -24,16 +26,16 @@ The app allows users to:
 
 <p align="center">
 
-  <img src="/Frontend/assetreadme/4.png" alt="Welcome" width="250"/>
-  <img src="/Frontend/assetreadme/5.png" alt="User Login" width="250"/>
-  <img src="/Frontend/assetreadme/7.png" alt="User Create Account" width="250"/>
-  <img src="/Frontend/assetreadme/8.png" alt="User Home" width="250"/>
-  <img src="/Frontend/assetreadme/9.png" alt="Pick up & Destination" width="250"/>
-  <img src="/Frontend/assetreadme/12.png" alt="Choose Vehicle" width="250"/>
-  <img src="/Frontend/assetreadme/15.png" alt="Searching your ride" width="250"/>
-  <img src="/Frontend/assetreadme/16.png" alt="Captain Create Account" width="250"/>
-  <img src="/Frontend/assetreadme/20.png" alt="Captain Login" width="250"/>
-  <img src="/Frontend/assetreadme/19.png" alt="Captain Home" width="250"/>
+  <img src="/Frontend/assetreadme/4.png" alt="Welcome" width="150"/>
+  <img src="/Frontend/assetreadme/5.png" alt="User Login" width="150"/>
+  <img src="/Frontend/assetreadme/7.png" alt="User Create Account" width="150"/>
+  <img src="/Frontend/assetreadme/8.png" alt="User Home" width="150"/>
+  <img src="/Frontend/assetreadme/9.png" alt="Pick up & Destination" width="150"/>
+  <img src="/Frontend/assetreadme/12.png" alt="Choose Vehicle" width="150"/>
+  <img src="/Frontend/assetreadme/15.png" alt="Searching your ride" width="150"/>
+  <img src="/Frontend/assetreadme/16.png" alt="Captain Create Account" width="150"/>
+  <img src="/Frontend/assetreadme/20.png" alt="Captain Login" width="150"/>
+  <img src="/Frontend/assetreadme/19.png" alt="Captain Home" width="150"/>
 </p>
 
 ---

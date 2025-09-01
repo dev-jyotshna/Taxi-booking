@@ -18,9 +18,7 @@ The app allows users to:
 
 ### 🎥 Video Demo
 
-- Watch them both \
-  👉 [Watch the demo for USER](/Frontend/assetreadme/User%20Taxi%20Booking%20App.mp4)  
-  👉 [Watch the demo for DRIVER](/Frontend/assetreadme/Driver%20Taxi%20Booking%20App.mp4)
+👉 [Watch the demo](https://youtu.be/kPm9Bwqobg0)
 
 ### Screenshots
 
